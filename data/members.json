@@ -1,0 +1,10 @@
+{
+  "roles": ["Moderador", "Secretario"],
+  "members": [
+    {"name": "Daniel",   "waid": "5219212671618"},
+    {"name": "Paco", "waid": "5212293655442"},
+    {"name": "Marcos",  "waid": "5212721073312"},
+    {"name": "Sheila", "waid": "5219211787763"},
+    {"name": "Roger",   "waid": "5215634948177"}
+  ]
+}

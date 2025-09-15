@@ -1,0 +1,38 @@
+{
+  "round": 3,
+  "pending": {
+    "Moderador": {
+      "candidate": "5215634948177",
+      "declined_by": [],
+      "accepted": true
+    },
+    "Secretario": {
+      "candidate": "5219212671618",
+      "declined_by": [],
+      "accepted": true
+    }
+  },
+  "accepted": {
+    "Moderador": {
+      "waid": "5215634948177",
+      "name": "Roger"
+    },
+    "Secretario": {
+      "waid": "5219212671618",
+      "name": "Daniel"
+    }
+  },
+  "members_cycle": {
+    "5219212671618": [
+      "Secretario"
+    ],
+    "5212293655442": [],
+    "5212721073312": [],
+    "5219211787763": [],
+    "5215634948177": [
+      "Moderador"
+    ]
+  },
+  "last_summary": "🗓️ Reunión #3 – Roles asignados:\n• Moderador: Roger\n• Secretario: Daniel",
+  "canceled": false
+}

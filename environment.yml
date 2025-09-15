@@ -1,13 +1,19 @@
-name: cookiecutter-personal
+name: chatbot-whatsapp
 channels:
   - conda-forge
   - defaults
 dependencies:
   - python=3.12
   - pip
-  - cookiecutter        # sin fijar versión estricta, así obtienes la última
+  # 🔹 Desarrollo y utilidades
+  - cookiecutter        # para plantillas
   - pytest              # testing básico
   - black               # formateo automático
   - flake8              # linting
   - isort               # ordena imports
   - jupyterlab          # notebooks si haces prototipos
+  # 🔹 Dependencias específicas del chatbot
+  - flask=3.0.3
+  - requests=2.32.3
+  - pip:
+      - python-dotenv==1.0.1
