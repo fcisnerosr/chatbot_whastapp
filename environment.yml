@@ -1,0 +1,13 @@
+name: cookiecutter-personal
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - cookiecutter        # sin fijar versión estricta, así obtienes la última
+  - pytest              # testing básico
+  - black               # formateo automático
+  - flake8              # linting
+  - isort               # ordena imports
+  - jupyterlab          # notebooks si haces prototipos
