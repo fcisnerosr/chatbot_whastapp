@@ -7,8 +7,8 @@ import requests
 load_dotenv()
 
 # ====== CONFIG Gupshup ======
-GUPSHUP_API_KEY = os.getenv("GUPSHUP_API_KEY")
-GUPSHUP_APP_NAME = os.getenv("GUPSHUP_APP_NAME", "RolesClubBot")
+GUPSHUP_API_KEY = os.getenv(" sRol")
+GUPSHUP_APP_NAME = os.getenv("GUPSHUP_APP_NAME", "RolesDeCanela")
 GUPSHUP_SOURCE = os.getenv("GUPSHUP_SOURCE")  # ej: 917834811114 (sin +)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "rolesclub-verify")
 
