@@ -44,7 +44,7 @@ Crea un archivo `.env` en la raíz del proyecto con tus credenciales de **Gupshu
 
 ```env
 GUPSHUP_API_KEY=tu_api_key
-GUPSHUP_APP_NAME=RolesClubBot
+GUPSHUP_APP_NAME=RolesClubBotToastmasters
 GUPSHUP_SOURCE=917834811114
 VERIFY_TOKEN=rolesclub-verify
 ADMIN_NUMBERS=521XXXXXXXXXX,521YYYYYYYYYY
