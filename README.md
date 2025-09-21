@@ -73,11 +73,10 @@ chatbot_whastapp/
 ```
 
 ---
-
 ## 🛠️ Uso local (con ngrok)
 
-### 1. Levantar Flask
-Desde la raíz del proyecto:
+### 1. Levantar Flask  
+Desde la raíz del proyecto, activa tu entorno virtual y corre el bot:
 
 ```bash
 python src/app.py
@@ -88,7 +87,25 @@ Esto levanta el servidor Flask en:
 - `http://127.0.0.1:5000`  
 - `http://0.0.0.0:5000`
 
-### 2. Exponer el puerto con ngrok
+---
+
+### 2. Autenticación en ngrok (solo una vez por equipo/PC)  
+Antes de exponer el puerto, es necesario **vincular ngrok con la cuenta del equipo** (la de Paco en GitHub).  
+
+1. Copia el **Authtoken privado de ngrok** desde el dashboard:  
+   👉 https://dashboard.ngrok.com/get-started/your-authtoken  
+
+2. En tu terminal, pega el comando (reemplaza `XXXXX` con el token copiado):  
+
+```bash
+ngrok config add-authtoken XXXXX
+```
+
+⚠️ **Importante:** este token es **privado** (como una contraseña). **No debe compartirse en repositorios ni en archivos públicos**.  
+
+---
+
+### 3. Exponer el puerto con ngrok  
 Ejecuta en otra terminal:
 
 ```bash
@@ -100,6 +117,11 @@ Verás algo como:
 ```
 Forwarding  https://abcd1234.ngrok-free.app -> http://localhost:5000
 ```
+
+Esa **URL pública** es la que debes registrar como Webhook en **Gupshup**.  
+
+📌 Nota: la cuenta de ngrok usada está registrada a nombre de **Paco (con GitHub)**.  
+
 
 Esa URL pública es la que usaremos en Gupshup.  
 📌 Nota: la cuenta de ngrok usada está registrada a nombre de Paco (con GitHub).
