@@ -18,9 +18,9 @@ ADMIN_NUMBERS = [n.strip() for n in os.getenv("ADMIN_NUMBERS", "").split(",") if
 HEADERS_FORM = {"apikey": GUPSHUP_API_KEY, "Content-Type": "application/x-www-form-urlencoded"}
 
 # ====== Archivos ======
-BASE_DIR = Path(__file__).parent
-MEMBERS_FILE = BASE_DIR / "members.json"
-STATE_FILE   = BASE_DIR / "state.json"
+BASE_DIR = Path(__file__).resolve().parent.parent
+MEMBERS_FILE = BASE_DIR / "data" / "members.json"
+STATE_FILE   = BASE_DIR / "data" / "state.json"
 
 # ====== Utilidades ======
 def send_text(to_e164_no_plus: str, text: str):
