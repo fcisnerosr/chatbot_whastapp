@@ -1,190 +1,145 @@
-# Chatbot WhatsApp
+Chatbot WhatsApp — Roles/Toastmasters (PROTOTIPO)
 
-📦 Versión: `0.1.0`  
-👤 Autor: [Data and Flow Consulting](mailto:fcisnerosr@outlook.es)  
-⚖️ Licencia: Proprietary
+Version: 1.0
+Author: Data & Flow Consulting <fcisnerosr@outlook.es>
+License: Proprietary
 
----
+====================================================================
+⚠️ NOTAS IMPORTANTES (LEER ANTES DE USAR)
+====================================================================
+• Este repositorio es un PROTOTIPO en evolución. Úsalo para pruebas; no es
+  aún un sistema “production-ready”.
+• NUNCA subas el archivo .env al repositorio ni compartas ahí credenciales.
+  Mantén .env fuera de Git (está en .gitignore). Provee .env.example como guía.
+• Quien ejecute el bot debe agregarse como ADMIN en el .env para poder usar
+  comandos administrativos (INICIAR/ESTADO/RESET/CANCELAR).
+• En modo Sandbox de Gupshup, cada usuario debe escribir “hola” al número
+  sandbox al menos una vez cada 24h para poder recibir mensajes del bot.
 
-## ✨ Descripción
+====================================================================
+Descripción
+====================================================================
+Bot en Python + Flask que administra rondas y asigna roles de una reunión
+(Toastmasters). Envía propuestas de rol por WhatsApp usando Gupshup API.
+Para pruebas locales expone el servidor con ngrok.
 
-Chatbot para programar de manera automática las sesiones de Toastmasters.  
-Este proyecto fue generado automáticamente con [Cookiecutter](https://cookiecutter.readthedocs.io/), siguiendo buenas prácticas de estructura y organización en Python.  
-Integra **Flask** y **Gupshup API** para automatizar la asignación de roles en reuniones.  
-Se expone mediante **ngrok** para pruebas locales.
-
----
-
-## 🚀 Requisitos
-
-- Python 3.12+
-- [Mamba](https://mamba.readthedocs.io/) o [Conda](https://docs.conda.io/)
-- Pip (si prefieres usarlo para dependencias)
-- Cuenta y credenciales de **Gupshup**
-- Cuenta gratuita de **ngrok** (📌 actualmente vinculada con la cuenta de GitHub de Paco)
-
----
-
-## 📦 Instalación
-
-Clona el repositorio y crea el entorno:
-
-```bash
-mamba env create -f environment.yml
-mamba activate chatbot-whatsapp
-```
-
-O bien con `pip`:
-
-```bash
-pip install -r requirements.txt
-```
-
-Crea un archivo `.env` en la raíz del proyecto con tus credenciales de **Gupshup**:
-
-```env
-GUPSHUP_API_KEY=tu_api_key
-GUPSHUP_APP_NAME=RolesClubBotToastmasters
-GUPSHUP_SOURCE=917834811114
-VERIFY_TOKEN=rolesclub-verify
-ADMIN_NUMBERS=521XXXXXXXXXX,521YYYYYYYYYY
-PORT=5000
-```
-
----
-
-## 📂 Estructura del proyecto
-
-```
+Estructura principal:
 chatbot_whastapp/
-├── src/             # código fuente principal
-│   └── app.py       # servidor Flask del bot
-├── data/            # datos locales (miembros, estado)
-│   ├── members.json
-│   └── state.json
-├── tests/           # pruebas unitarias
-├── notebooks/       # notebooks de exploración
-├── scripts/         # scripts auxiliares
-├── README.md        # este archivo
-├── LICENSE
-├── requirements.txt
-├── environment.yml
-└── pyproject.toml
-```
+├─ src/                # código fuente
+│  └─ app.py           # servidor Flask (endpoints / y /webhook)
+├─ data/               # datos locales (no públicos)
+│  ├─ members.json     # catálogo de miembros y roles disponibles
+│  └─ state.json       # estado persistente (se autogenera si no existe)
+├─ scripts/            # utilidades
+├─ notebooks/          # exploración
+├─ tests/              # pruebas
+├─ environment.yml     # entorno conda/mamba
+├─ pyproject.toml
+└─ README.md
 
----
-## 🛠️ Uso local (con ngrok)
+Roles y comandos (resumen):
+• Admin (debes estar en ADMIN_NUMBERS del .env): INICIAR, ESTADO, CANCELAR, RESET
+• Usuario: ACEPTO, RECHAZO, MI ROL, HOLA
 
-### 1. Levantar Flask  
-Desde la raíz del proyecto, activa tu entorno virtual y corre el bot:
+====================================================================
+Requisitos
+====================================================================
+• Python 3.12+
+• Mamba/Conda (o pip)
+• Cuenta de Gupshup (App WhatsApp con modo Sandbox)
+• Cuenta de ngrok (gratuita) para exponer http://localhost:5000
 
-```bash
-python src/app.py
-```
+====================================================================
+Instalación del entorno
+====================================================================
+1) Crear y activar entorno con mamba/conda:
+   mamba env create -f environment.yml
+   mamba activate chatbot-whatsapp
 
-Esto levanta el servidor Flask en:
+   (Alternativa pip: pip install -r requirements.txt)
 
-- `http://127.0.0.1:5000`  
-- `http://0.0.0.0:5000`
+2) Crear .env en la raíz del proyecto (NO subir a Git). Ejemplo:
+   GUPSHUP_API_KEY=tu_api_key
+   GUPSHUP_APP_NAME=RolesClubBotToastmasters
+   GUPSHUP_SOURCE=917834811114            # remitente sandbox (sin +)
+   VERIFY_TOKEN=rolesclub-verify
+   ADMIN_NUMBERS=521XXXXXXXXXX            # tu número admin (E.164 sin +)
+   PORT=5000
 
----
+   Importante:
+   • Si no estás en ADMIN_NUMBERS, no podrás iniciar ronda ni usar comandos admin.
+   • Provee un archivo .env.example (sin secretos) para el equipo.
 
-### 2. Autenticación en ngrok (solo una vez por equipo/PC)  
-Antes de exponer el puerto, es necesario **vincular ngrok con la cuenta del equipo** (la de Paco en GitHub).  
+====================================================================
+Ejecución local + ngrok + Webhook
+====================================================================
+1) Levantar Flask (en una terminal):
+   python src/app.py
+   (verás “Running on http://127.0.0.1:5000”)
 
-1. Copia el **Authtoken privado de ngrok** desde el dashboard:  
-   👉 https://dashboard.ngrok.com/get-started/your-authtoken  
+2) Autenticar ngrok (una sola vez por equipo/PC):
+   ngrok config add-authtoken <TU_AUTHTOKEN_PRIVADO>
 
-2. En tu terminal, pega el comando (reemplaza `XXXXX` con el token copiado):  
+3) Exponer el puerto (en otra terminal):
+   ngrok http 5000
+   Copia la URL pública que aparece (https://xxxxx.ngrok-free.app)
 
-```bash
-ngrok config add-authtoken XXXXX
-```
+4) Configurar Webhook en Gupshup (App > Webhooks > Add/Edit):
+   • Callback URL: https://xxxxx.ngrok-free.app/webhook
+   • Payload: Meta format (v3)
+   • Eventos: Message, Sent, Delivered, Read, Failed
 
-⚠️ **Importante:** este token es **privado** (como una contraseña). **No debe compartirse en repositorios ni en archivos públicos**.  
+5) Regla Sandbox (Gupshup):
+   • Cada miembro debe escribir “hola” al número sandbox para habilitar recepción
+     durante 24h. Repetir si pasa el tiempo.
 
----
+6) Prueba rápida (desde el número admin):
+   • Enviar “hola” al sandbox.
+   • Enviar “INICIAR” para comenzar una ronda.
+   • Enviar “ESTADO” para ver pendientes.
+   • Responder desde los miembros con “ACEPTO” o “RECHAZO”.
 
-### 3. Exponer el puerto con ngrok  
-Ejecuta en otra terminal:
+Consejo: Abre http://127.0.0.1:4040 para inspeccionar requests/responses de ngrok.
 
-```bash
-ngrok http 5000
-```
+====================================================================
+Buenas prácticas de configuración/secrets
+====================================================================
+• .env: nunca en Git. Usa .env.example como plantilla.
+• Producción: define variables de entorno en el servicio (Render/Railway/Heroku,
+  Docker/compose, systemd) o usa un Secret Manager.
+• Si alguna clave se subió por error: ROTAR la clave y limpiar el historial.
 
-Verás algo como:
+====================================================================
+Despliegue (alto nivel)
+====================================================================
+1) Subir el repo a GitHub.
+2) PaaS (Render/Railway/Heroku) o un VPS detrás de Nginx+Gunicorn.
+3) Variables de entorno = valores de .env.
+4) Comando de inicio (ejemplo simple): python src/app.py
+5) Configurar Webhook de Gupshup a la URL pública de tu servicio:
+   https://<tu-app>.onrender.com/webhook
 
-```
-Forwarding  https://abcd1234.ngrok-free.app -> http://localhost:5000
-```
+====================================================================
+Solución de problemas comunes
+====================================================================
+• No recibo mensajes en pruebas:
+  – Asegúrate de que enviaste “hola” al sandbox (ventana 24h).
+  – Verifica que el webhook apunta a /webhook con protocolo https y Meta v3.
+  – Revisa que ADMIN_NUMBERS tenga tu número en formato E.164 sin “+”.
+• ngrok no muestra tráfico:
+  – Abre http://127.0.0.1:4040 para ver cada request.
+• Cambió la URL de ngrok:
+  – Actualiza el Webhook en Gupshup con la nueva URL.
 
-Esa **URL pública** es la que debes registrar como Webhook en **Gupshup**.  
+====================================================================
+Contribución
+====================================================================
+• Crea una rama: git checkout -b feature/nueva-funcionalidad
+• Commit con mensajes claros: feat|fix|chore|docs: ...
+• Abre un Pull Request.
 
-📌 Nota: la cuenta de ngrok usada está registrada a nombre de **Paco (con GitHub)**.  
-
-
-Esa URL pública es la que usaremos en Gupshup.  
-📌 Nota: la cuenta de ngrok usada está registrada a nombre de Paco (con GitHub).
-
-### 4. Configurar el **Webhook** en Gupshup:
-
-- Ir a Gupshup > tu app > Webhooks > Add/Edit Webhook
-- Pegar la URL de ngrok con `/webhook` al final:
-
-```bash
-[https://dba192d5aa01.ngrok-free.app/webhook](https://dba192d5aa01.ngrok-free.app/webhook)
-```
-
-### 5. Guarda los cambios.  
-
-Con eso, cualquier mensaje que llegue al sandbox de Gupshup será enviado a tu bot en local.
-
----
-
-## ☁️ Despliegue en la nube
-
-Plataformas recomendadas:
-- [Render](https://render.com)
-- [Railway](https://railway.app)
-- [Heroku](https://www.heroku.com)
-
-Pasos:
-1. Sube el repo a GitHub.  
-2. Conecta el repo a la plataforma.  
-3. Configura las variables de entorno (igual que en `.env`).  
-4. Asegura que el comando de inicio sea:
-
-```bash
-python src/app.py
-```
-
-5. Configura la URL pública de tu app en el webhook de Gupshup:
-
-```
-https://<tu-app>.onrender.com/webhook
-```
-
----
-
-## ✅ Verificación rápida
-
-1. Envía un mensaje desde WhatsApp al número de Gupshup.  
-2. El bot debe responder con los comandos configurados:  
-   - Admin: `INICIAR`, `ESTADO`, `CANCELAR`, `RESET`  
-   - Usuario: `ACEPTO`, `RECHAZO`, `MI ROL`  
-
----
-
-## 🤝 Contribución
-
-1. Haz un **fork** del repositorio.  
-2. Crea una nueva rama (`git checkout -b feature/nueva-funcionalidad`).  
-3. Haz tus cambios y confirma (`git commit -m "Add: nueva funcionalidad"`).  
-4. Envía un **pull request** 🚀.  
-
----
-
-## 📄 Licencia
-
-Este proyecto está bajo la licencia **Proprietary**.  
-Consulta el archivo `LICENSE` para más detalles.
+====================================================================
+Licencia
+====================================================================
+Proprietary. Consulta el archivo LICENSE para detalles.
+"""
