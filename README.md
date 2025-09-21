@@ -18,6 +18,7 @@ License: Proprietary
 Bot en Python + Flask que administra rondas y asigna roles de una reunión (Toastmasters). Envía propuestas de rol por WhatsApp usando Gupshup API. Para pruebas locales expone el servidor con ngrok.
 
 Estructura principal:
+```
 chatbot_whastapp/
 ├─ src/             # código fuente
 │  └─ app.py        # servidor Flask (endpoints / y /webhook)
@@ -30,6 +31,7 @@ chatbot_whastapp/
 ├─ environment.yml   # entorno conda/mamba
 ├─ pyproject.toml
 └─ README.md
+```
 
 Roles y comandos (resumen):
 * **Admin** (debes estar en `ADMIN_NUMBERS` del `.env`): `INICIAR`, `ESTADO`, `CANCELAR`, `RESET`
