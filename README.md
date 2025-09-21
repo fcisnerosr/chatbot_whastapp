@@ -126,7 +126,7 @@ Esa **URL pública** es la que debes registrar como Webhook en **Gupshup**.
 Esa URL pública es la que usaremos en Gupshup.  
 📌 Nota: la cuenta de ngrok usada está registrada a nombre de Paco (con GitHub).
 
-### 3. Configurar el Webhook en Gupshup
+### 4. Configurar el Webhook en Gupshup
 1. Entra a tu app en Gupshup.  
 2. Ve a **WhatsApp > Webhooks > Add/Edit Webhook**.  
 3. Pega la URL pública de ngrok + `/webhook`.  
@@ -136,7 +136,7 @@ Esa URL pública es la que usaremos en Gupshup.
    https://abcd1234.ngrok-free.app/webhook
    ```
 
-4. Guarda los cambios.  
+5. Guarda los cambios.  
 
 Con eso, cualquier mensaje que llegue al sandbox de Gupshup será enviado a tu bot en local.
 
