@@ -11,6 +11,7 @@ GUPSHUP_API_KEY = os.getenv(" sRol")
 GUPSHUP_APP_NAME = os.getenv("GUPSHUP_APP_NAME", "RolesDeCanela")
 GUPSHUP_SOURCE = os.getenv("GUPSHUP_SOURCE")  # ej: 917834811114 (sin +)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "rolesclub-verify")
+app.run(host="0.0.0.0", port=5000, debug=False)
 
 # Admin(es) (E.164 sin +, separados por coma)
 ADMIN_NUMBERS = [n.strip() for n in os.getenv("ADMIN_NUMBERS", "").split(",") if n.strip()]
@@ -313,4 +314,4 @@ def webhook_post():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
