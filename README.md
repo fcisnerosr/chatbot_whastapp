@@ -10,7 +10,8 @@
 
 Chatbot para programar de manera automática las sesiones de Toastmasters.  
 Este proyecto fue generado automáticamente con [Cookiecutter](https://cookiecutter.readthedocs.io/), siguiendo buenas prácticas de estructura y organización en Python.  
-Integra **Flask** y **Gupshup API** para automatizar la asignación de roles en reuniones.
+Integra **Flask** y **Gupshup API** para automatizar la asignación de roles en reuniones.  
+Se expone mediante **ngrok** para pruebas locales.
 
 ---
 
@@ -20,6 +21,7 @@ Integra **Flask** y **Gupshup API** para automatizar la asignación de roles en 
 - [Mamba](https://mamba.readthedocs.io/) o [Conda](https://docs.conda.io/)
 - Pip (si prefieres usarlo para dependencias)
 - Cuenta y credenciales de **Gupshup**
+- Cuenta gratuita de **ngrok** (📌 actualmente vinculada con la cuenta de GitHub de Paco)
 
 ---
 
@@ -38,7 +40,7 @@ O bien con `pip`:
 pip install -r requirements.txt
 ```
 
-Crea un archivo `.env` en la raíz del proyecto con tus credenciales:
+Crea un archivo `.env` en la raíz del proyecto con tus credenciales de **Gupshup**:
 
 ```env
 GUPSHUP_API_KEY=tu_api_key
@@ -72,30 +74,49 @@ chatbot_whastapp/
 
 ---
 
-## 🛠️ Uso local
+## 🛠️ Uso local (con ngrok)
 
-1. Activa tu entorno virtual.  
-2. Desde la raíz del proyecto ejecuta:
+### 1. Levantar Flask
+Desde la raíz del proyecto:
 
 ```bash
 python src/app.py
 ```
 
-Esto levanta un servidor Flask en `http://0.0.0.0:5000`.
+Esto levanta el servidor Flask en:
 
-### Exponer con ngrok
+- `http://127.0.0.1:5000`  
+- `http://0.0.0.0:5000`
 
-Si corres localmente, necesitas exponer tu puerto con [ngrok](https://ngrok.com/):
+### 2. Exponer el puerto con ngrok
+Ejecuta en otra terminal:
 
 ```bash
 ngrok http 5000
 ```
 
-Configura el webhook en Gupshup con la URL pública que genere ngrok, por ejemplo:
+Verás algo como:
 
 ```
-https://abcd1234.ngrok.io/webhook
+Forwarding  https://abcd1234.ngrok-free.app -> http://localhost:5000
 ```
+
+Esa URL pública es la que usaremos en Gupshup.  
+📌 Nota: la cuenta de ngrok usada está registrada a nombre de Paco (con GitHub).
+
+### 3. Configurar el Webhook en Gupshup
+1. Entra a tu app en Gupshup.  
+2. Ve a **WhatsApp > Webhooks > Add/Edit Webhook**.  
+3. Pega la URL pública de ngrok + `/webhook`.  
+   Ejemplo:
+
+   ```
+   https://abcd1234.ngrok-free.app/webhook
+   ```
+
+4. Guarda los cambios.  
+
+Con eso, cualquier mensaje que llegue al sandbox de Gupshup será enviado a tu bot en local.
 
 ---
 
