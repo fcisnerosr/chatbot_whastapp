@@ -95,6 +95,7 @@ Roles y comandos (resumen):
 
 5.  **Regla Sandbox (Gupshup):**
     * Cada miembro debe escribir “hola” al número sandbox para habilitar recepción durante 24h. Repetir si pasa el tiempo.
+    * Otra alternativa es compartir el link del bot en etapa de sandbox, dicho link está en gupshup.ai y en las configuraciones de la app creada, en la sección de "Opt-ins", desplegar "Onboarding mechanism", desplegar más abajo para que en la sección de "Click URL", justo debajo está el link para compartir a los miembros del club que participan en Toastmasters.
 
 6.  **Prueba rápida (desde el número admin):**
     * Enviar “hola” al sandbox.
