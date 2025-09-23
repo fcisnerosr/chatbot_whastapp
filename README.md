@@ -132,6 +132,7 @@ Roles y comandos (resumen):
     * Abre `http://127.0.0.1:4040` para ver cada request.
 * **Cambió la URL de ngrok:**
     * Actualiza el Webhook en Gupshup con la nueva URL.
+    * Confirmar EditWebhook
 
 ---
 ## Contribución
