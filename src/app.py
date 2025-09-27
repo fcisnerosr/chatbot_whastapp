@@ -1,8 +1,7 @@
 # app.py
 # --------------------------------------------------------------------------------------
 # WhatsApp roles bot (Flask + Gupshup)
-# Versión con buenas prácticas: validación de config, logging, persistencia atómica,
-# normalización de comandos y comentarios explicativos.
+# Versión integrada con models.py y club.json (POO + persistencia).
 # --------------------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -23,13 +22,15 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from requests.exceptions import RequestException
 
+# Importar las clases del modelo POO
+from models import Club, Member, Role
+
 # ------------------------------------------------------------------------------
 # 1) Configuración y logging
 # ------------------------------------------------------------------------------
 
-load_dotenv()  # Lee variables desde .env si existe
+load_dotenv()
 
-# Configura logging (puedes cambiar el nivel con LOG_LEVEL=DEBUG/INFO/WARNING...)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -40,32 +41,25 @@ log = logging.getLogger("roles-bot")
 
 @dataclass(frozen=True)
 class Config:
-    """Config inmutable cargada desde variables de entorno (fail-fast)."""
-
     api_key: str
     app_name: str
     source: str  # E.164 SIN el '+'
     verify_token: str
-    admins: Set[str]  # E.164 SIN el '+'
+    admins: Set[str]
     port: int
 
 
 def load_config() -> Config:
-    """Lee y valida la configuración requerida. Revienta si falta algo crítico."""
     missing: List[str] = []
     api_key = os.getenv("GUPSHUP_API_KEY")
     if not api_key:
         missing.append("GUPSHUP_API_KEY")
-
     source = os.getenv("GUPSHUP_SOURCE")
     if not source:
         missing.append("GUPSHUP_SOURCE")
 
     if missing:
-        raise RuntimeError(
-            f"Variables de entorno faltantes: {', '.join(missing)}. "
-            "Define un archivo .env o exporta variables antes de ejecutar."
-        )
+        raise RuntimeError(f"Faltan variables: {', '.join(missing)}")
 
     app_name = os.getenv("GUPSHUP_APP_NAME", "RolesClubBotToastmasters")
     verify = os.getenv("VERIFY_TOKEN", "rolesclub-verify")
@@ -78,74 +72,37 @@ CFG = load_config()
 HEADERS_FORM = {"apikey": CFG.api_key, "Content-Type": "application/x-www-form-urlencoded"}
 
 # ------------------------------------------------------------------------------
-# 2) Rutas de archivos
+# 2) Rutas de archivos y carga del club
 # ------------------------------------------------------------------------------
 
-# Estructura esperada del proyecto:
-# <repo>/
-#  ├─ data/
-#  │   ├─ members.json
-#  │   └─ state.json
-#  └─ src/app.py  (este archivo)
 BASE_DIR = Path(__file__).resolve().parent.parent
-MEMBERS_FILE = BASE_DIR / "data" / "members.json"
+CLUB_FILE = BASE_DIR / "data" / "club.json"
 STATE_FILE = BASE_DIR / "data" / "state.json"
 
-if not MEMBERS_FILE.exists():
+if not CLUB_FILE.exists():
     raise FileNotFoundError(
-        f"No se encontró {MEMBERS_FILE}. Crea data/members.json con estructura: "
-        '{"roles": [...], "members": [{"name": "...", "waid": "E164_sin_+"}, ...]}.'
+        f"No se encontró {CLUB_FILE}. Ejecuta primero: python src/setup_club.py"
     )
 
-# ------------------------------------------------------------------------------
-# 3) Carga de catálogo (roles y miembros)
-# ------------------------------------------------------------------------------
+# Cargar catálogo del club (roles + miembros + niveles)
+club = Club()
+club.load_from_json(str(CLUB_FILE))
 
-def load_members() -> Tuple[List[str], List[Dict[str, str]], Dict[str, Dict[str, str]]]:
-    """Lee y valida members.json; devuelve (roles, miembros, índice por waid)."""
-    with MEMBERS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    roles = data.get("roles", [])
-    members = data.get("members", [])
-
-    if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
-        raise ValueError("`roles` debe ser lista de strings en members.json")
-
-    if not isinstance(members, list):
-        raise ValueError("`members` debe ser lista en members.json")
-
-    idx: Dict[str, Dict[str, str]] = {}
-    for m in members:
-        if not isinstance(m, dict) or "waid" not in m or "name" not in m:
-            raise ValueError("Cada miembro debe tener claves 'name' y 'waid'")
-        waid = str(m["waid"]).strip()
-        if not waid.isdigit():
-            log.warning("WAID no parece E.164 (solo dígitos): %s", waid)
-        idx[waid] = m
-
-    return roles, members, idx
-
-
-ROLES, MEMBERS, MEMBERS_IDX = load_members()
-ALL_NUMBERS: Tuple[str, ...] = tuple(m["waid"] for m in MEMBERS)
+ALL_NUMBERS: Tuple[str, ...] = tuple(m.waid for m in club.members)
 
 # ------------------------------------------------------------------------------
-# 4) Persistencia del estado (JSON atómico con lock)
+# 3) Persistencia del estado (JSON atómico con lock)
 # ------------------------------------------------------------------------------
 
 def _dump_json_atomic(path: Path, obj: dict) -> None:
-    """Escribe JSON de forma atómica (escribe a fichero temporal y luego reemplaza)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as tmp:
         json.dump(obj, tmp, ensure_ascii=False, indent=2)
         tmp_path = Path(tmp.name)
-    os.replace(tmp_path, path)  # atómico en la mayoría de SOs
+    os.replace(tmp_path, path)
 
 
 class StateStore:
-    """Pequeña utilidad hilo-segura para cargar/guardar state.json."""
-
     def __init__(self, path: Path):
         self.path = path
         self._lock = Lock()
@@ -164,12 +121,11 @@ class StateStore:
 
 
 def default_state() -> dict:
-    """Estado inicial."""
     return {
         "round": 0,
-        "pending": {},  # role -> {"candidate": waid, "declined_by": [], "accepted": false}
-        "accepted": {},  # role -> {"waid": "...", "name": "..."}
-        "members_cycle": {m["waid"]: [] for m in MEMBERS},  # roles completados por miembro
+        "pending": {},
+        "accepted": {},
+        "members_cycle": {m.waid: [] for m in club.members},
         "last_summary": None,
         "canceled": False,
     }
@@ -178,14 +134,10 @@ def default_state() -> dict:
 state_store = StateStore(STATE_FILE)
 
 # ------------------------------------------------------------------------------
-# 5) Utilidades de negocio (envíos, elección de candidatos, textos)
+# 4) Utilidades de negocio
 # ------------------------------------------------------------------------------
 
 def send_text(to_e164_no_plus: str, text: str) -> dict:
-    """
-    Envía texto por la API de Gupshup con manejo de errores.
-    Devuelve dict con resultado (útil para logs/depuración).
-    """
     url = "https://api.gupshup.io/wa/api/v1/msg"
     data = {
         "channel": "whatsapp",
@@ -206,7 +158,6 @@ def send_text(to_e164_no_plus: str, text: str) -> dict:
 
 
 def broadcast_text(numbers: Set[str] | List[str] | Tuple[str, ...], text: str) -> Dict[str, int]:
-    """Envía un texto a varios números y devuelve contadores de OK/fallo."""
     ok = fail = 0
     for n in numbers:
         res = send_text(n, text)
@@ -218,38 +169,33 @@ def broadcast_text(numbers: Set[str] | List[str] | Tuple[str, ...], text: str) -
 
 
 def pretty_name(waid: str) -> str:
-    m = MEMBERS_IDX.get(waid)
-    return m["name"] if m else waid
+    member = next((m for m in club.members if m.waid == waid), None)
+    return member.name if member else waid
 
 
 def roles_left_for_member(waid: str) -> List[str]:
     st = state_store.load()
     done = set(st["members_cycle"].get(waid, []))
-    return [r for r in ROLES if r not in done]
+    return [r.name for r in club.roles if r.name not in done]
 
 
 def choose_candidate(role: str, excluded: Set[str]) -> Optional[str]:
-    """
-    Elige elegibles (no hayan hecho ese rol en su ciclo) y excluye ya propuestos/aceptados.
-    Si no hay elegibles, permite repetir evitando duplicar dentro de la ronda.
-    """
     st = state_store.load()
     eligible: List[str] = []
-    for m in MEMBERS:
-        w = m["waid"]
-        if w in excluded:
+    for m in club.members:
+        if m.waid in excluded:
             continue
-        done = set(st["members_cycle"].get(w, []))
+        done = set(st["members_cycle"].get(m.waid, []))
         if role not in done:
-            eligible.append(w)
+            eligible.append(m.waid)
     if not eligible:
-        eligible = [m["waid"] for m in MEMBERS if m["waid"] not in excluded]
+        eligible = [m.waid for m in club.members if m.waid not in excluded]
     return random.choice(eligible) if eligible else None
 
 
 def make_summary(st: dict) -> str:
     lines = [f"🗓️ Reunión #{st['round']} – Roles asignados:"]
-    for role in ROLES:
+    for role in [r.name for r in club.roles]:
         if role in st["accepted"]:
             w = st["accepted"][role]["waid"]
             lines.append(f"• {role}: {pretty_name(w)}")
@@ -258,7 +204,6 @@ def make_summary(st: dict) -> str:
     return "\n".join(lines)
 
 
-# Normalizador y tablas de comandos (evita problemas de acentos/mayúsculas)
 def norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     return s.strip().lower()
@@ -266,36 +211,20 @@ def norm(s: str) -> str:
 
 ADMIN_CMDS: Dict[str, str] = {
     "iniciar": "start",
-    "/iniciar": "start",
-    "roles": "start",
     "estado": "status",
-    "/estado": "status",
     "cancelar": "cancel",
-    "/cancelar": "cancel",
     "reset": "reset",
-    "/reset": "reset",
 }
 
 USER_CMDS: Dict[str, str] = {
     "acepto": "accept",
-    "aceptar": "accept",
-    "si acepto": "accept",
-    "sí acepto": "accept",
     "rechazo": "reject",
-    "no acepto": "reject",
-    "no puedo": "reject",
-    "rechazar": "reject",
     "mi rol": "whoami",
-    "mirol": "whoami",
-    "miasignacion": "whoami",
-    "miasignacion": "whoami",
     "hola": "hello",
-    "hi": "hello",
-    "hello": "hello",
 }
 
 # ------------------------------------------------------------------------------
-# 6) Reglas de la ronda (mutan el state y envían mensajes)
+# 5) Reglas de la ronda
 # ------------------------------------------------------------------------------
 
 def start_new_round(by_admin: str) -> str:
@@ -309,8 +238,7 @@ def start_new_round(by_admin: str) -> str:
     st["last_summary"] = None
     st["canceled"] = False
 
-    # Crea primer candidato por rol y avisa
-    for role in ROLES:
+    for role in [r.name for r in club.roles]:
         excluded = set(a["waid"] for a in st["accepted"].values())
         cand = choose_candidate(role, excluded)
         if not cand:
@@ -324,11 +252,10 @@ def start_new_round(by_admin: str) -> str:
             cand,
             f"Hola {pretty_name(cand)} 👋\n"
             f"Para la reunión #{st['round']} te propongo el rol *{role}*.\n\n"
-            f"Responde:\n• *ACEPTO* para confirmar\n• *RECHAZO* si no puedes\n\n"
-            f"(Si rechazas, se propondrá a otro miembro.)",
+            f"Responde:\n• *ACEPTO* para confirmar\n• *RECHAZO* si no puedes",
         )
 
-    broadcast_text(CFG.admins, f"✅ Ronda #{st['round']} iniciada por {by_admin}. Escribe ESTADO para ver pendientes.")
+    broadcast_text(CFG.admins, f"✅ Ronda #{st['round']} iniciada por {by_admin}.")
     return f"Ronda #{st['round']} iniciada."
 
 
@@ -343,15 +270,21 @@ def handle_accept(waid: str) -> str:
             done_list = list(st["members_cycle"].get(waid, []))
             if role not in done_list:
                 done_list.append(role)
-            if len(done_list) >= len(ROLES):
-                done_list = []  # reinicia ciclo al completar todos
+            if len(done_list) >= len(club.roles):
+                done_list = []
             st["members_cycle"][waid] = done_list
+
+            # 🔑 Actualiza progreso también en club.json (sube nivel y guarda)
+            member = next((m for m in club.members if m.waid == waid), None)
+            role_obj = next((r for r in club.roles if r.name == role), None)
+            if member and role_obj:
+                member.add_role(role_obj)
+                club.save_to_json(str(CLUB_FILE))
 
             state_store.save(st)
             send_text(waid, f"🎉 ¡Gracias {pretty_name(waid)}! Quedaste como *{role}* en la reunión #{st['round']}.")
             check_and_announce_if_complete()
             return f"{pretty_name(waid)} aceptó {role}."
-    send_text(waid, "No tienes una propuesta de rol pendiente ahora mismo. Escribe *MI ROL* para verificar.")
     return "Nada que aceptar."
 
 
@@ -370,22 +303,21 @@ def handle_reject(waid: str) -> str:
                 send_text(
                     cand,
                     f"Hola {pretty_name(cand)} 👋\n"
-                    f"¿Podrías tomar el rol *{role}* para la reunión #{st['round']}?\n"
+                    f"¿Podrías tomar el rol *{role}* en la reunión #{st['round']}?\n"
                     f"Responde *ACEPTO* o *RECHAZO*.",
                 )
                 return f"{pretty_name(waid)} rechazó {role}. Nuevo candidato: {pretty_name(cand)}"
             else:
                 del st["pending"][role]
                 state_store.save(st)
-                broadcast_text(CFG.admins, f"⚠️ No hay candidato disponible para {role}. Resolver manualmente.")
+                broadcast_text(CFG.admins, f"⚠️ No hay candidato disponible para {role}.")
                 return "Sin candidatos."
-    send_text(waid, "No tienes propuesta de rol pendiente ahora. Escribe *MI ROL* para verificar.")
     return "Nada que rechazar."
 
 
 def check_and_announce_if_complete() -> None:
     st = state_store.load()
-    all_ok = all(role in st["accepted"] for role in ROLES)
+    all_ok = all(role in st["accepted"] for role in [r.name for r in club.roles])
     if not all_ok or st.get("canceled"):
         return
     summary = make_summary(st)
@@ -394,18 +326,17 @@ def check_and_announce_if_complete() -> None:
     st["last_summary"] = summary
     state_store.save(st)
     broadcast_text(ALL_NUMBERS, f"✅ {summary}\n\n¡Nos vemos en la próxima reunión!")
-    broadcast_text(CFG.admins, "📣 Se anunció a todos los miembros.")
 
 
 def who_am_i(waid: str) -> str:
     st = state_store.load()
     for role, info in st["pending"].items():
         if info["candidate"] == waid and not info["accepted"]:
-            return f"Tienes pendiente el rol *{role}* en la ronda #{st['round']}.\nResponde *ACEPTO* o *RECHAZO*."
+            return f"Tienes pendiente el rol *{role}* en la ronda #{st['round']}."
     for role, acc in st["accepted"].items():
         if acc["waid"] == waid:
             return f"Ya aceptaste el rol *{role}* en la ronda #{st['round']}."
-    return "No tienes asignaciones pendientes. Si esperas una propuesta, consulta al admin."
+    return "No tienes asignaciones pendientes."
 
 
 def status_text() -> str:
@@ -431,30 +362,27 @@ def cancel_round(by_admin: str) -> str:
     st["last_summary"] = None
     st["canceled"] = True
     state_store.save(st)
-    broadcast_text(ALL_NUMBERS, "⚠️ La ronda de roles fue *cancelada* por el administrador.")
-    broadcast_text(CFG.admins, f"❌ Ronda #{st['round']} cancelada por {by_admin}.")
+    broadcast_text(ALL_NUMBERS, "⚠️ La ronda fue cancelada por el administrador.")
     return f"Ronda #{st['round']} cancelada."
 
 
 def reset_all(by_admin: str) -> str:
     st = default_state()
     state_store.save(st)
-    broadcast_text(CFG.admins, f"🔄 Estado completamente reiniciado por {by_admin}. (round=0)")
-    return "Estado reiniciado a fábrica."
+    broadcast_text(CFG.admins, f"🔄 Estado reiniciado por {by_admin}.")
+    return "Estado reiniciado."
 
 # ------------------------------------------------------------------------------
-# 7) Flask app (endpoints)
+# 6) Flask app
 # ------------------------------------------------------------------------------
 
 app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
 def health():
-    """Endpoint de salud (útil para pruebas o monitoreo)."""
-    return {"ok": True, "app": CFG.app_name, "roles": ROLES, "members": len(MEMBERS)}
+    return {"ok": True, "app": CFG.app_name, "roles": [r.name for r in club.roles], "members": len(club.members)}
 
 
-# Verificación tipo FB/Gupshup (GET). Útil si activas el modo de verificación.
 @app.route("/webhook", methods=["GET"])
 def webhook_get():
     mode = request.args.get("hub.mode")
@@ -467,7 +395,6 @@ def webhook_get():
 
 @app.route("/webhook", methods=["POST"])
 def webhook_post():
-    """Recibe eventos de Gupshup (formato Meta v3). Responde 200 siempre para evitar reintentos."""
     data = request.get_json(force=True, silent=True) or {}
     try:
         value = (
@@ -475,8 +402,6 @@ def webhook_post():
             .get("changes", [{}])[0]
             .get("value", {})
         )
-
-        # Mensajes entrantes
         for msg in value.get("messages", []):
             if msg.get("type") != "text":
                 continue
@@ -489,17 +414,15 @@ def webhook_post():
             if waid in CFG.admins and body in ADMIN_CMDS:
                 cmd = ADMIN_CMDS[body]
                 if cmd == "start":
-                    out = start_new_round(by_admin=pretty_name(waid))
+                    out = start_new_round(pretty_name(waid))
                     send_text(waid, out)
                 elif cmd == "status":
                     send_text(waid, status_text())
                 elif cmd == "cancel":
-                    out = cancel_round(pretty_name(waid))
-                    send_text(waid, out)
+                    send_text(waid, cancel_round(pretty_name(waid)))
                 elif cmd == "reset":
-                    out = reset_all(pretty_name(waid))
-                    send_text(waid, out)
-                continue  # siguiente mensaje
+                    send_text(waid, reset_all(pretty_name(waid)))
+                continue
 
             # Comandos usuario
             if body in USER_CMDS:
@@ -511,13 +434,9 @@ def webhook_post():
                 elif action == "whoami":
                     send_text(waid, who_am_i(waid))
                 elif action == "hello":
-                    send_text(waid, "¡Hola! Soy RolesClubBot 🤖. ¿En qué te ayudo?")
+                    send_text(waid, "¡Hola! Soy RolesClubBot 🤖.")
             else:
                 send_text(waid, f"Recibí: {body_raw}. Escribe *MI ROL*, *ACEPTO* o *RECHAZO*.")
-
-        # También podrías procesar value.get("statuses") si te interesa
-        if "statuses" in value:
-            log.debug("Statuses: %s", value["statuses"])
 
     except Exception:
         log.exception("Error procesando webhook; payload=%s", data)
@@ -525,7 +444,7 @@ def webhook_post():
     return jsonify({"status": "ok"})
 
 # ------------------------------------------------------------------------------
-# 8) Main
+# 7) Main
 # ------------------------------------------------------------------------------
 
 if __name__ == "__main__":
