@@ -280,6 +280,7 @@ USER_CMDS: Dict[str, str] = {
     "acepto": "accept",
     "aceptar": "accept",
     "si acepto": "accept",
+    "sí acepto": "accept",
     "rechazo": "reject",
     "no acepto": "reject",
     "no puedo": "reject",
