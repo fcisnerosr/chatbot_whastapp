@@ -91,7 +91,7 @@ chatbot_whatsapp/
 1) **Crear y activar entorno con mamba/conda**
 ```bash
 mamba env create -f environment.yml
-mamba activate chatbot-whatsapp
+mamba activate chatbot_wht
 ```
 ```python
 # (Alternativa pip)
