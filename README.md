@@ -103,12 +103,12 @@ pip install -r requirements.txt
 
 2) **Crear `.env` en la raíz (NO subir a Git)**
    ```dotenv
-   GUPSHUP_API_KEY=tu_api_key
-   GUPSHUP_APP_NAME=RolesClubBotToastmasters
-   GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
-   VERIFY_TOKEN=rolesclub-verify
-   ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
-   PORT=5000
+GUPSHUP_API_KEY=tu_api_key
+GUPSHUP_APP_NAME=RolesClubBotToastmasters
+GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
+VERIFY_TOKEN=rolesclub-verify
+ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
+PORT=5000
    ```
 
 **Importante**
