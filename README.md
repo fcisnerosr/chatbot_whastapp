@@ -92,23 +92,20 @@ chatbot_whatsapp/
 ```bash
 mamba env create -f environment.yml
 mamba activate chatbot_wht
-```
-```python
-# (Alternativa pip)
-```
-```bash
+# Alternativa pip
 pip install -r requirements.txt
 ```
 
 
 2) **Crear `.env` en la raíz (NO subir a Git)**
+   
    ```dotenv
-GUPSHUP_API_KEY=tu_api_key
-GUPSHUP_APP_NAME=RolesClubBotToastmasters
-GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
-VERIFY_TOKEN=rolesclub-verify
-ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
-PORT=5000
+    GUPSHUP_API_KEY=tu_api_key
+    GUPSHUP_APP_NAME=RolesClubBotToastmasters
+    GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
+    VERIFY_TOKEN=rolesclub-verify
+    ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
+    PORT=5000
    ```
 
 **Importante**
@@ -124,7 +121,7 @@ PORT=5000
 Genera `data/club.json` con roles y miembros iniciales.  
 Esto debe hacerse **antes de la primera vez que corras `app.py`**:
 ```python
-python src/setup_club.py
+  python src/setup_club.py
 ```
 Verás: ✅ Semilla creada en data/club.json
 
@@ -138,17 +135,17 @@ Puedes editar `setup_club.py` para cambiar:
 
 1) **Levantar Flask**
 ```bash
-python src/app.py
+  python src/app.py
 ```
 
 2) **Autenticar ngrok** (una vez por máquina)
 ```bash
-ngrok config add-authtoken <TU_AUTHTOKEN_PRIVADO>
+  ngrok config add-authtoken <TU_AUTHTOKEN_PRIVADO>
 ```
 
 3) **Exponer puerto**
 ```bash
-ngrok http 5000
+  ngrok http 5000
 ```
 
 4) **Configurar Webhook en Gupshup (App > Webhooks > Add/Edit)**
