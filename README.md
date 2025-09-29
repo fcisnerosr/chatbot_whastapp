@@ -89,8 +89,10 @@ chatbot_whatsapp/
 ## Instalación del entorno
 
 1) **Crear y activar entorno con mamba/conda**
+```bash
 mamba env create -f environment.yml
 mamba activate chatbot-whatsapp
+```
 # (Alternativa pip) pip install -r requirements.txt
 
 2) **Crear `.env` en la raíz (NO subir a Git)**
