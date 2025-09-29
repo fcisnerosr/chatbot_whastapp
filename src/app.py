@@ -137,6 +137,21 @@ state_store = StateStore(STATE_FILE)
 # 4) Utilidades de negocio
 # ------------------------------------------------------------------------------
 
+def pending_candidates(st: dict, exclude_role: Optional[str] = None) -> Set[str]:
+    """
+    Devuelve el conjunto de waid actualmente propuestos en 'pending'.
+    Si exclude_role se indica, no considera el candidato de ese rol.
+    """
+    cands: Set[str] = set()
+    for r, info in st.get("pending", {}).items():
+        if exclude_role is not None and r == exclude_role:
+            continue
+        cand = info.get("candidate")
+        if cand:
+            cands.add(cand)
+    return cands
+
+
 def send_text(to_e164_no_plus: str, text: str) -> dict:
     url = "https://api.gupshup.io/wa/api/v1/msg"
     data = {
@@ -238,11 +253,23 @@ def start_new_round(by_admin: str) -> str:
     st["last_summary"] = None
     st["canceled"] = False
 
+
     for role in [r.name for r in club.roles]:
+        # 1er intento: evitar duplicar candidatos dentro de la misma ronda
         excluded = set(a["waid"] for a in st["accepted"].values())
+        excluded.update(pending_candidates(st))  # evita que una misma persona reciba 2 roles
+
         cand = choose_candidate(role, excluded)
+
+        # Fallback: si no hay nadie (pocos miembros vs muchos roles), relajamos la exclusión
         if not cand:
+            excluded = set(a["waid"] for a in st["accepted"].values())
+            cand = choose_candidate(role, excluded)
+
+        if not cand:
+            # si aún así no hay candidato, pasa al siguiente rol
             continue
+
         st["pending"][role] = {"candidate": cand, "declined_by": [], "accepted": False}
     state_store.save(st)
 
@@ -295,7 +322,17 @@ def handle_reject(waid: str) -> str:
             info["declined_by"].append(waid)
             excluded = set(info["declined_by"])
             excluded.update(a["waid"] for a in st["accepted"].values())
+            # Evita proponer a alguien ya pendiente para otro rol
+            excluded.update(pending_candidates(st, exclude_role=role))
+
             cand = choose_candidate(role, excluded)
+
+            # Fallback: si no alcanzan los miembros, relajamos la exclusión de 'pending'
+            if not cand:
+                excluded = set(info["declined_by"])
+                excluded.update(a["waid"] for a in st["accepted"].values())
+                cand = choose_candidate(role, excluded)
+
             if cand:
                 info["candidate"] = cand
                 state_store.save(st)

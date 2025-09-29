@@ -1,5 +1,5 @@
 {
-  "round": 0,
+  "round": 1,
   "pending": {},
   "accepted": {},
   "members_cycle": {
@@ -10,5 +10,5 @@
     "5215634948177": []
   },
   "last_summary": null,
-  "canceled": false
+  "canceled": true
 }
