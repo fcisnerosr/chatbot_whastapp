@@ -157,7 +157,7 @@ ngrok http 5000
 - Eventos: Message, Sent, Delivered, Read, Failed
 
 5) **Regla Sandbox (Gupshup)**
-- Cada miembro debe enviar “hola” al sandbox para habilitar recepción 24h.
+- Cada miembro debe enviar `hola` al sandbox para habilitar recepción 24h.
 - Alternativa: compartir el **Click URL** de `Opt-ins > Onboarding mechanism` en gupshup.ai.
 
 6) **Prueba rápida (desde el número admin)**
@@ -178,7 +178,6 @@ from models import Club
 
 club = Club()
 club.load_from_json("data/club.json")
-
 
 # Ejemplo de uso dentro de tus handlers:
 club.assign_role("Paco", "Evaluador del tiempo")
