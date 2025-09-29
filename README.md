@@ -23,7 +23,7 @@ Para pruebas locales expone el servidor con **ngrok**.
 **Nueva implementación (v1.1):**  
 - Se introduce **POO** con `src/models.py`:
   - `Role` (rol + dificultad 1–6)
-  - `Member` (socio/invitado + nivel + historial de roles)
+  - `Member` (socio/invitado + jerarquía + historial de roles)
   - `Club` (orquestador, persistencia JSON)
 - Se agrega `src/setup_club.py` para **sembrar** el estado inicial en `data/club.json`.
 - **Reemplaza** el antiguo `data/members.json` como catálogo principal.  
@@ -40,7 +40,7 @@ chatbot_whatsapp/
 │  ├─ models.py       # POO: Role, Member, Club + persistencia JSON
 │  └─ setup_club.py   # script de semilla inicial (genera data/club.json)
 ├─ data/
-│  ├─ club.json       # (nuevo) estado del club: roles + miembros + niveles
+│  ├─ club.json       # (nuevo) estado del club: roles + miembros + jerarquías
 │  └─ state.json      # estado de ronda del bot (runtime), si aplica
 ├─ scripts/           # utilidades
 ├─ notebooks/         # exploración
@@ -55,7 +55,7 @@ chatbot_whatsapp/
 - **`src/models.py`**  
   Define el **modelo POO** y la **persistencia**:
   - `Role`: nombre + dificultad (1–6)
-  - `Member`: nombre, waid, socio/invitado, nivel (1–6), roles_done
+  - `Member`: nombre, waid, socio/invitado, jerarquía (1–6), roles_done
   - `Club`: mantiene listas de `members` y `roles`, asigna roles (`assign_role`) y guarda/carga JSON (`save_to_json`/`load_from_json`).
 
 - **`src/setup_club.py`**  
@@ -187,7 +187,7 @@ roles_sugeridos = club.available_roles_for_level(level_actual)
 > **Importante**:  
 > - `setup_club.py` se ejecuta **una sola vez al inicio** para crear `club.json`.  
 > - Después, cada vez que corras `python src/app.py`, el bot ya carga automáticamente ese catálogo.  
-> - `data/club.json` es el **catálogo persistente** (miembros + roles + niveles).  
+> - `data/club.json` es el **catálogo persistente** (miembros + roles + jerarquías).  
 > - `data/state.json` es el **estado de la ronda en curso** y se maneja solo desde `app.py`.
 
 ---
