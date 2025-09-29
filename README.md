@@ -93,7 +93,13 @@ chatbot_whatsapp/
 mamba env create -f environment.yml
 mamba activate chatbot-whatsapp
 ```
-# (Alternativa pip) pip install -r requirements.txt
+```python
+# (Alternativa pip)
+```
+```bash
+pip install -r requirements.txt
+```
+
 
 2) **Crear `.env` en la raíz (NO subir a Git)**
    ```dotenv
