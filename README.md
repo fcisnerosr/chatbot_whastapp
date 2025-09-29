@@ -137,13 +137,19 @@ Puedes editar `setup_club.py` para cambiar:
 ## Ejecución local + ngrok + Webhook
 
 1) **Levantar Flask**
+```bash
 python src/app.py
+```
 
 2) **Autenticar ngrok** (una vez por máquina)
+```bash
 ngrok config add-authtoken <TU_AUTHTOKEN_PRIVADO>
+```
 
 3) **Exponer puerto**
+```bash
 ngrok http 5000
+```
 
 4) **Configurar Webhook en Gupshup (App > Webhooks > Add/Edit)**
 - Callback URL: https://xxxxx.ngrok-free.app/webhook
@@ -155,10 +161,10 @@ ngrok http 5000
 - Alternativa: compartir el **Click URL** de `Opt-ins > Onboarding mechanism` en gupshup.ai.
 
 6) **Prueba rápida (desde el número admin)**
-- Enviar “hola” al sandbox.
-- INICIAR → comienza una ronda.
-- ESTADO → ver pendientes.
-- Los miembros responden ACEPTO / RECHAZO.
+- Enviar `hola` al sandbox.
+- `INICIAR` → comienza una ronda.
+- `ESTADO` → ver pendientes.
+- Los miembros responden `ACEPTO` / `RECHAZO`.
 
 > **Tip**: inspecciona tráfico en http://127.0.0.1:4040.
 
