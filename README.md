@@ -34,7 +34,7 @@ Para pruebas locales expone el servidor con **ngrok**.
 ## Estructura principal
 
 ```text
-chatbot_whastapp/
+chatbot_whatsapp/
 ├─ src/
 │  ├─ app.py          # servidor Flask (endpoints / y /webhook)
 │  ├─ models.py       # POO: Role, Member, Club + persistencia JSON
@@ -115,9 +115,9 @@ mamba activate chatbot-whatsapp
 
 Genera `data/club.json` con roles y miembros iniciales.  
 Esto debe hacerse **antes de la primera vez que corras `app.py`**:
-
+```python
 python src/setup_club.py
-
+```
 Verás: ✅ Semilla creada en data/club.json
 
 Puedes editar `setup_club.py` para cambiar:
@@ -159,15 +159,17 @@ ngrok http 5000
 ## Cómo usar el catálogo en `app.py`
 
 En tu `src/app.py`, **carga el club** al iniciar la app:
-
+```python
 from models import Club
 
 club = Club()
 club.load_from_json("data/club.json")
 
+
 # Ejemplo de uso dentro de tus handlers:
-# club.assign_role("Paco", "Evaluador del tiempo")
-# roles_sugeridos = club.available_roles_for_level(level_actual)
+club.assign_role("Paco", "Evaluador del tiempo")
+roles_sugeridos = club.available_roles_for_level(level_actual)
+```
 
 > **Importante**:  
 > - `setup_club.py` se ejecuta **una sola vez al inicio** para crear `club.json`.  
@@ -178,7 +180,7 @@ club.load_from_json("data/club.json")
 ---
 
 ## Migración (opcional) desde `data/members.json`
-
+```json
 Si aún tienes el archivo antiguo:
 {
   "roles": ["Moderador", "Secretario"],
@@ -186,6 +188,7 @@ Si aún tienes el archivo antiguo:
     {"name": "Daniel", "waid": "521..."}
   ]
 }
+```
 *Recomendación:* **Deja de usarlo** y migra al nuevo `data/club.json` con `setup_club.py`.  
 Si necesitas conservar “roles antiguos”, añádelos manualmente a `setup_club.py` (o edita `data/club.json` después de la semilla).
 
