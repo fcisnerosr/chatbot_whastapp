@@ -33,6 +33,7 @@ Para pruebas locales expone el servidor con **ngrok**.
 
 ## Estructura principal
 
+```text
 chatbot_whastapp/
 ├─ src/
 │  ├─ app.py          # servidor Flask (endpoints / y /webhook)
@@ -47,6 +48,7 @@ chatbot_whastapp/
 ├─ environment.yml    # entorno conda/mamba
 ├─ pyproject.toml
 └─ README.md
+```
 
 **¿Qué hace cada archivo clave?**
 
@@ -92,12 +94,14 @@ mamba activate chatbot-whatsapp
 # (Alternativa pip) pip install -r requirements.txt
 
 2) **Crear `.env` en la raíz (NO subir a Git)**
-GUPSHUP_API_KEY=tu_api_key
-GUPSHUP_APP_NAME=RolesClubBotToastmasters
-GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
-VERIFY_TOKEN=rolesclub-verify
-ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
-PORT=5000
+   ```dotenv
+   GUPSHUP_API_KEY=tu_api_key
+   GUPSHUP_APP_NAME=RolesClubBotToastmasters
+   GUPSHUP_SOURCE=917834811114      # remitente sandbox (sin +)
+   VERIFY_TOKEN=rolesclub-verify
+   ADMIN_NUMBERS=521XXXXXXXXXX       # tu número admin (E.164 sin +)
+   PORT=5000
+   ```
 
 **Importante**
 - Si no estás en `ADMIN_NUMBERS`, no podrás usar comandos admin.

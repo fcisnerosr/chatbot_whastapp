@@ -32,10 +32,8 @@
       "name": "Roger",
       "waid": "5215634948177",
       "is_guest": false,
-      "level": 2,
-      "roles_done": [
-        "Evaluador de vacilaciones"
-      ]
+      "level": 1,
+      "roles_done": []
     }
   ],
   "roles": [
