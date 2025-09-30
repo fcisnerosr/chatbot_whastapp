@@ -196,15 +196,27 @@ def roles_left_for_member(waid: str) -> List[str]:
 
 def choose_candidate(role: str, excluded: Set[str]) -> Optional[str]:
     st = state_store.load()
+    # Buscar el rol para obtener su dificultad
+    role_obj = next((r for r in club.roles if r.name == role), None)
+    if not role_obj:
+        return None
+    
     eligible: List[str] = []
     for m in club.members:
         if m.waid in excluded:
             continue
+        # Solo considerar miembros cuyo nivel >= dificultad del rol
+        if m.level < role_obj.difficulty:
+            continue
         done = set(st["members_cycle"].get(m.waid, []))
         if role not in done:
             eligible.append(m.waid)
+    
     if not eligible:
-        eligible = [m.waid for m in club.members if m.waid not in excluded]
+        # Fallback: cualquier miembro con nivel suficiente (ignora si ya hizo el rol)
+        eligible = [m.waid for m in club.members 
+                   if m.waid not in excluded and m.level >= role_obj.difficulty]
+    
     return random.choice(eligible) if eligible else None
 
 

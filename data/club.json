@@ -4,28 +4,28 @@
       "name": "Daniel",
       "waid": "5219212671618",
       "is_guest": false,
-      "level": 1,
+      "level": 3,
       "roles_done": []
     },
     {
       "name": "Paco",
       "waid": "5212293655442",
       "is_guest": false,
-      "level": 1,
+      "level": 3,
       "roles_done": []
     },
     {
       "name": "Marcos",
       "waid": "5212721073312",
       "is_guest": false,
-      "level": 1,
+      "level": 2,
       "roles_done": []
     },
     {
       "name": "Sheila",
       "waid": "5219211787763",
       "is_guest": false,
-      "level": 1,
+      "level": 2,
       "roles_done": []
     },
     {
@@ -48,18 +48,6 @@
     {
       "name": "Evaluador gramatical",
       "difficulty": 3
-    },
-    {
-      "name": "Director de Table topics",
-      "difficulty": 4
-    },
-    {
-      "name": "Toastmasters de la noche",
-      "difficulty": 5
-    },
-    {
-      "name": "Evaluador general",
-      "difficulty": 6
     }
   ]
 }
