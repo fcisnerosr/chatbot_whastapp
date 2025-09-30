@@ -11,7 +11,7 @@
       "name": "Paco",
       "waid": "5212293655442",
       "is_guest": false,
-      "level": 3,
+      "level": 2,
       "roles_done": []
     },
     {
@@ -32,8 +32,11 @@
       "name": "Roger",
       "waid": "5215634948177",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
+      "level": 3,
+      "roles_done": [
+        "Evaluador del tiempo",
+        "Evaluador del tiempo"
+      ]
     }
   ],
   "roles": [

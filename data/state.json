@@ -1,13 +1,39 @@
 {
-  "round": 0,
-  "pending": {},
-  "accepted": {},
+  "round": 1,
+  "pending": {
+    "Evaluador del tiempo": {
+      "candidate": "5215634948177",
+      "declined_by": [
+        "5212721073312",
+        "5212293655442"
+      ],
+      "accepted": true
+    },
+    "Evaluador de vacilaciones": {
+      "candidate": "5219211787763",
+      "declined_by": [],
+      "accepted": false
+    },
+    "Evaluador gramatical": {
+      "candidate": "5219212671618",
+      "declined_by": [],
+      "accepted": false
+    }
+  },
+  "accepted": {
+    "Evaluador del tiempo": {
+      "waid": "5215634948177",
+      "name": "Roger"
+    }
+  },
   "members_cycle": {
     "5219212671618": [],
     "5212293655442": [],
     "5212721073312": [],
     "5219211787763": [],
-    "5215634948177": []
+    "5215634948177": [
+      "Evaluador del tiempo"
+    ]
   },
   "last_summary": null,
   "canceled": false

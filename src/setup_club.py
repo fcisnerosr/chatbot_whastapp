@@ -36,9 +36,9 @@ roles = [
     ("Evaluador del tiempo", 1),
     ("Evaluador de vacilaciones", 2),
     ("Evaluador gramatical", 3),
-    ("Director de Table topics", 4),
-    ("Toastmasters de la noche", 5),
-    ("Evaluador general", 6),
+    # ("Director de Table topics", 4),
+    # ("Toastmasters de la noche", 5),
+    # ("Evaluador general", 6),
 ]
 
 for name, diff in roles:
@@ -46,15 +46,15 @@ for name, diff in roles:
 
 # Definir miembros iniciales
 members = [
-    ("Daniel", "5219212671618"),
-    ("Paco", "5212293655442"),
-    ("Marcos", "5212721073312"),
-    ("Sheila", "5219211787763"),
-    ("Roger", "5215634948177"),
+  ("Daniel", "5219212671618", 3),
+  ("Paco", "5212293655442", 2),
+  ("Marcos", "5212721073312", 2),
+  ("Sheila", "5219211787763", 2),
+  ("Roger", "5215634948177", 1),
 ]
 
-for name, waid in members:
-    club.add_member(Member(name, waid))
+for name, waid, level in members:
+  club.add_member(Member(name, waid, level=level))
 
 # Guardar en club.json
 club.save_to_json("data/club.json")
