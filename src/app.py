@@ -232,6 +232,7 @@ def admin_list_members() -> str:
         lines.append(f"• {m.name} — {m.waid} (nivel {getattr(m, 'level', 1)})")
     return "\n".join(lines)
 
+
 def _find_member_by_waid_or_name(token: str):
     token = token.strip().lower()
     # buscar por waid exacto
@@ -240,6 +241,7 @@ def _find_member_by_waid_or_name(token: str):
         return m
     # buscar por nombre (case-insensitive)
     return next((m for m in club.members if m.name.strip().lower() == token), None)
+
 
 def admin_add_member(name: str, waid: str, level: int = 1, is_guest: bool = False) -> str:
     from models import Member  # evitar import circular arriba si lo mueves
@@ -259,6 +261,7 @@ def admin_add_member(name: str, waid: str, level: int = 1, is_guest: bool = Fals
     club.save_to_json(str(CLUB_FILE))
     return f"✅ Agregado: {name} — {waid} (nivel {level})"
 
+
 def admin_remove_member(waid_or_name: str) -> str:
     target = _find_member_by_waid_or_name(waid_or_name)
     if not target:
@@ -271,7 +274,7 @@ def admin_remove_member(waid_or_name: str) -> str:
         return "No se puede eliminar: el miembro tiene roles pendientes o aceptados en la ronda actual."
 
     # eliminar del catálogo
-    club.members = [m for m in club.members as list if m.waid != target.waid]
+    club.members = [m for m in club.members if m.waid != target.waid]
     club.save_to_json(str(CLUB_FILE))
 
     # limpiar del estado (ciclo)
@@ -286,6 +289,7 @@ ADMIN_CMDS: Dict[str, str] = {
     "cancelar": "cancel",
     "reset": "reset",
 }
+
 
 USER_CMDS: Dict[str, str] = {
     "acepto": "accept",
