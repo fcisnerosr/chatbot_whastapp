@@ -283,7 +283,7 @@ def admin_remove_member(waid_or_name: str) -> str:
         return "No se puede eliminar: el miembro tiene roles pendientes o aceptados en la ronda actual."
 
     # eliminar del catálogo
-    club.members = [m for m in club.members as list if m.waid != target.waid]
+    club.members = [m for m in club.members if m.waid != target.waid]
     club.save_to_json(str(CLUB_FILE))
 
     # limpiar del estado (ciclo)
