@@ -114,20 +114,55 @@ pip install -r requirements.txt
 
 ---
 
-## 🧩 Inicialización del catálogo (Semilla)
+## 🧩 Inicialización y Comandos
+
+Esta sección describe cómo interactuar con el bot una vez que está en funcionamiento.
+
+### Inicialización del Catálogo (Semilla)
 
 > **Esta sección es nueva en v1.1 y es obligatoria la primera vez.**
 
-Genera `data/club.json` con roles y miembros iniciales.  
+Genera `data/club.json` con roles y miembros iniciales.
 Esto debe hacerse **antes de la primera vez que corras `app.py`**:
-```python
-  python src/setup_club.py
+
+```bash
+python src/setup_club.py
 ```
-Verás: ✅ Semilla creada en data/club.json
+
+Verás: `✅ Semilla creada en data/club.json`
 
 Puedes editar `setup_club.py` para cambiar:
 - Miembros (añadir/quitar, marcar invitados con `is_guest=True`)
 - Roles (nombres y dificultad)
+
+### Comandos del Bot
+
+El bot responde a comandos de administradores y de usuarios estándar.
+
+#### Comandos de Administrador
+
+Solo los números en `ADMIN_NUMBERS` pueden usar estos comandos.
+
+| Comando                        | Descripción                                                                                                                            |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `INICIAR`                      | Comienza una nueva ronda de asignación de roles. Propone un rol a cada miembro elegible.                                               |
+| `ESTADO`                       | Muestra un resumen de la ronda actual: roles ya asignados y roles pendientes con el candidato actual.                                  |
+| `CANCELAR`                     | Cancela la ronda actual. Notifica a todos los miembros.                                                                                |
+| `RESET`                        | **(Peligroso)** Reinicia completamente el estado del bot a cero, borrando la ronda actual y el historial de ciclos.                    |
+| `MIEMBROS`                     | Muestra una lista de todos los miembros registrados en el club, junto con su número de WhatsApp (waid) y su nivel actual.              |
+| `AGREGAR Nombre, 521...`       | Añade un nuevo miembro al club. El formato puede ser `Nombre, WAI` o `Nombre WAI`. El bot se encarga de limpiar el número.              |
+| `ELIMINAR 521...` o `Nombre`   | Elimina un miembro del club, ya sea por su número de WhatsApp (waid) o por su nombre exacto. No se puede eliminar si tiene un rol activo. |
+
+#### Comandos de Usuario
+
+Disponibles para todos los miembros.
+
+| Comando   | Descripción                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `ACEPTO`  | Confirma que aceptas el rol propuesto. Tu asignación queda fija.                                        |
+| `RECHAZO` | Rechaza el rol propuesto. El bot buscará un nuevo candidato para ese rol.                               |
+| `MI ROL`  | Te recuerda qué rol tienes pendiente de aceptar o cuál ya te fue asignado en la ronda actual.            |
+| `HOLA`    | Saluda al bot. Útil para reactivar la ventana de 24 horas en el modo Sandbox de Gupshup.                  |
 
 ---
 
