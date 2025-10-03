@@ -137,6 +137,21 @@ state_store = StateStore(STATE_FILE)
 # 4) Utilidades de negocio
 # ------------------------------------------------------------------------------
 
+def pending_candidates(st: dict, exclude_role: Optional[str] = None) -> Set[str]:
+    """
+    Devuelve el conjunto de waid actualmente propuestos en 'pending'.
+    Si exclude_role se indica, no considera el candidato de ese rol.
+    """
+    cands: Set[str] = set()
+    for r, info in st.get("pending", {}).items():
+        if exclude_role is not None and r == exclude_role:
+            continue
+        cand = info.get("candidate")
+        if cand:
+            cands.add(cand)
+    return cands
+
+
 def send_text(to_e164_no_plus: str, text: str) -> dict:
     url = "https://api.gupshup.io/wa/api/v1/msg"
     data = {
@@ -208,6 +223,62 @@ def norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     return s.strip().lower()
 
+def admin_list_members() -> str:
+    """Devuelve un texto con la lista de miembros y su nivel."""
+    if not club.members:
+        return "No hay miembros en el club."
+    lines = ["👥 Miembros del club:"]
+    for m in club.members:
+        lines.append(f"• {m.name} — {m.waid} (nivel {getattr(m, 'level', 1)})")
+    return "\n".join(lines)
+
+def _find_member_by_waid_or_name(token: str):
+    token = token.strip().lower()
+    # buscar por waid exacto
+    m = next((m for m in club.members if m.waid == token), None)
+    if m:
+        return m
+    # buscar por nombre (case-insensitive)
+    return next((m for m in club.members if m.name.strip().lower() == token), None)
+
+def admin_add_member(name: str, waid: str, level: int = 1, is_guest: bool = False) -> str:
+    from models import Member  # evitar import circular arriba si lo mueves
+    name = name.strip()
+    waid = "".join(ch for ch in waid if ch.isdigit())  # sanitiza E.164 sin '+'
+    if not name or not waid:
+        return "Formato inválido. Usa: AGREGAR Nombre, 521XXXXXXXXXX"
+    # ya existe ese número
+    if any(m.waid == waid for m in club.members):
+        return f"Ya existe un miembro con ese número: {waid}"
+    new_m = Member(name=name, waid=waid, is_guest=is_guest, level=level)
+    club.members.append(new_m)
+    # agregar entrada a members_cycle en el estado
+    st = state_store.load()
+    st["members_cycle"][waid] = []
+    state_store.save(st)
+    club.save_to_json(str(CLUB_FILE))
+    return f"✅ Agregado: {name} — {waid} (nivel {level})"
+
+def admin_remove_member(waid_or_name: str) -> str:
+    target = _find_member_by_waid_or_name(waid_or_name)
+    if not target:
+        return "No encontré al miembro. Usa: ELIMINAR 521XXXXXXXXXX (o nombre exacto)."
+    # no permitir borrar si está en roles pendientes/aceptados de la ronda
+    st = state_store.load()
+    in_pending = any(d["candidate"] == target.waid and not d.get("accepted") for d in st.get("pending", {}).values())
+    in_accepted = any(v["waid"] == target.waid for v in st.get("accepted", {}).values())
+    if in_pending or in_accepted:
+        return "No se puede eliminar: el miembro tiene roles pendientes o aceptados en la ronda actual."
+
+    # eliminar del catálogo
+    club.members = [m for m in club.members as list if m.waid != target.waid]
+    club.save_to_json(str(CLUB_FILE))
+
+    # limpiar del estado (ciclo)
+    st["members_cycle"].pop(target.waid, None)
+    state_store.save(st)
+    return f"🗑️ Eliminado: {target.name} — {target.waid}"
+
 
 ADMIN_CMDS: Dict[str, str] = {
     "iniciar": "start",
@@ -239,10 +310,21 @@ def start_new_round(by_admin: str) -> str:
     st["canceled"] = False
 
     for role in [r.name for r in club.roles]:
+        # 1er intento: evitar duplicar candidatos dentro de la misma ronda
         excluded = set(a["waid"] for a in st["accepted"].values())
+        excluded.update(pending_candidates(st))  # evita que una misma persona reciba 2 roles
+
         cand = choose_candidate(role, excluded)
+
+        # Fallback: si no hay nadie (pocos miembros vs muchos roles), relajamos la exclusión
         if not cand:
+            excluded = set(a["waid"] for a in st["accepted"].values())
+            cand = choose_candidate(role, excluded)
+
+        if not cand:
+            # si aún así no hay candidato, pasa al siguiente rol
             continue
+
         st["pending"][role] = {"candidate": cand, "declined_by": [], "accepted": False}
     state_store.save(st)
 
@@ -295,7 +377,17 @@ def handle_reject(waid: str) -> str:
             info["declined_by"].append(waid)
             excluded = set(info["declined_by"])
             excluded.update(a["waid"] for a in st["accepted"].values())
+            # Evita proponer a alguien ya pendiente para otro rol
+            excluded.update(pending_candidates(st, exclude_role=role))
+
             cand = choose_candidate(role, excluded)
+
+            # Fallback: si no alcanzan los miembros, relajamos la exclusión de 'pending'
+            if not cand:
+                excluded = set(info["declined_by"])
+                excluded.update(a["waid"] for a in st["accepted"].values())
+                cand = choose_candidate(role, excluded)
+
             if cand:
                 info["candidate"] = cand
                 state_store.save(st)
@@ -410,19 +502,52 @@ def webhook_post():
             body = norm(body_raw)
             log.info("Mensaje de %s: %s", waid, body)
 
-            # Comandos admin
-            if waid in CFG.admins and body in ADMIN_CMDS:
-                cmd = ADMIN_CMDS[body]
-                if cmd == "start":
-                    out = start_new_round(pretty_name(waid))
+            # Comandos admin (exactos + con argumentos)
+            if waid in CFG.admins:
+                # comandos exactos
+                if body in ADMIN_CMDS:
+                    cmd = ADMIN_CMDS[body]
+                    if cmd == "start":
+                        out = start_new_round(pretty_name(waid))
+                        send_text(waid, out)
+                    elif cmd == "status":
+                        send_text(waid, status_text())
+                    elif cmd == "cancel":
+                        send_text(waid, cancel_round(pretty_name(waid)))
+                    elif cmd == "reset":
+                        send_text(waid, reset_all(pretty_name(waid)))
+                    continue
+
+                # prefijos con argumentos
+                # MIEMBROS → lista
+                if body == "miembros":
+                    send_text(waid, admin_list_members())
+                    continue
+
+                # AGREGAR Nombre, 521XXXXXXXXXX
+                if body.startswith("agregar "):
+                    # usa el body_raw para conservar mayúsculas/acentos del nombre
+                    tail = body_raw.strip()[len("agregar "):]
+                    # formato "Nombre, 521XXXXXXXXXX"
+                    if "," in tail:
+                        name, num = tail.split(",", 1)
+                    else:
+                        # o "Nombre 521XXXXXXXXXX" separado por espacio
+                        parts = tail.rsplit(" ", 1)
+                        if len(parts) != 2:
+                            send_text(waid, "Formato inválido. Usa: AGREGAR Nombre, 521XXXXXXXXXX")
+                            continue
+                        name, num = parts[0], parts[1]
+                    out = admin_add_member(name.strip(), num.strip())
                     send_text(waid, out)
-                elif cmd == "status":
-                    send_text(waid, status_text())
-                elif cmd == "cancel":
-                    send_text(waid, cancel_round(pretty_name(waid)))
-                elif cmd == "reset":
-                    send_text(waid, reset_all(pretty_name(waid)))
-                continue
+                    continue
+
+                # ELIMINAR 521XXXXXXXXXX  (o nombre exacto)
+                if body.startswith("eliminar "):
+                    tail = body_raw.strip()[len("eliminar "):]
+                    out = admin_remove_member(tail.strip())
+                    send_text(waid, out)
+                    continue
 
             # Comandos usuario
             if body in USER_CMDS:
@@ -436,7 +561,16 @@ def webhook_post():
                 elif action == "hello":
                     send_text(waid, "¡Hola! Soy RolesClubBot 🤖.")
             else:
-                send_text(waid, f"Recibí: {body_raw}. Escribe *MI ROL*, *ACEPTO* o *RECHAZO*.")
+                if waid in CFG.admins:
+                    send_text(waid,
+                    "Comandos admin: INICIAR | ESTADO | CANCELAR | RESET\n"
+                    "• MIEMBROS — lista miembros\n"
+                    "• AGREGAR Nombre, 521XXXXXXXXXX\n"
+                    "• ELIMINAR 521XXXXXXXXXX (o nombre exacto)\n\n"
+                    "Usuarios: MI ROL | ACEPTO | RECHAZO | HOLA"
+                    )
+                else:
+                    send_text(waid, f"Recibí: {body_raw}. Escribe *MI ROL*, *ACEPTO* o *RECHAZO*.")
 
     except Exception:
         log.exception("Error procesando webhook; payload=%s", data)
