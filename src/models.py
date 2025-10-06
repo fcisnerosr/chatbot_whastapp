@@ -1,3 +1,4 @@
+# models.py
 """
 --------------------------------------------------------------------------------
 Archivo: models.py
@@ -62,7 +63,7 @@ class Member:
         self.level = level
         self.roles_done = []
 
-    def add_role(self, role: Role):
+    def add_role(self, role: "Role"):
         """Asigna un rol y sube de nivel."""
         self.roles_done.append(role.name)
         self.increase_level()
@@ -112,16 +113,37 @@ class Club:
             raise ValueError("Miembro o rol no encontrado")
         member.add_role(role)
 
+    # -----------------------------
+    # Persistencia robusta en JSON
+    # -----------------------------
     def save_to_json(self, filepath="data/club.json"):
-        """Guarda todo el club en JSON."""
+        """
+        Guarda en UTF-8 (siempre). Esto evita problemas cuando el archivo
+        se edita desde Windows/Notepad y se guarda en ANSI por accidente.
+        """
         data = {
             "members": [m.to_dict() for m in self.members],
             "roles": [r.to_dict() for r in self.roles],
         }
-        Path(filepath).write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        Path(filepath).write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
 
     def load_from_json(self, filepath="data/club.json"):
-        """Carga el club desde JSON existente."""
-        data = json.loads(Path(filepath).read_text(encoding="utf-8"))
+        """
+        Intenta leer en UTF-8; si falla (archivo viejo en cp1252/latin-1),
+        hace fallback y re-guarda en UTF-8 para normalizar.
+        """
+        p = Path(filepath)
+        try:
+            raw = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # Fallback típico en Windows
+            raw = p.read_text(encoding="cp1252")
+            # Reescribimos en UTF-8 para normalizar a futuro
+            p.write_text(raw, encoding="utf-8")
+
+        data = json.loads(raw)
         self.members = [Member.from_dict(m) for m in data.get("members", [])]
         self.roles = [Role.from_dict(r) for r in data.get("roles", [])]
