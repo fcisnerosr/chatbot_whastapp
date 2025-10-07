@@ -11,15 +11,19 @@
       "name": "Paco",
       "waid": "5212293655442",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
+      "level": 2,
+      "roles_done": [
+        "Evaluador gramatical"
+      ]
     },
     {
       "name": "Marcos",
       "waid": "5212721073312",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
+      "level": 2,
+      "roles_done": [
+        "Evaluador del tiempo"
+      ]
     },
     {
       "name": "Sheila",
@@ -32,8 +36,10 @@
       "name": "Roger",
       "waid": "5215634948177",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
+      "level": 2,
+      "roles_done": [
+        "Evaluador de muletillas"
+      ]
     }
   ],
   "roles": [
@@ -43,23 +49,11 @@
     },
     {
       "name": "Evaluador de muletillas",
-      "difficulty": 2
+      "difficulty": 1
     },
     {
       "name": "Evaluador gramatical",
-      "difficulty": 3
-    },
-    {
-      "name": "Director de Table Topics",
-      "difficulty": 4
-    },
-    {
-      "name": "Toastmaster de la sesión",
-      "difficulty": 5
-    },
-    {
-      "name": "Evaluador general",
-      "difficulty": 6
+      "difficulty": 2
     }
   ]
 }

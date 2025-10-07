@@ -22,15 +22,15 @@
       "roles_done": []
     },
     {
-      "name": "Sheila",
-      "waid": "5219211787763",
+      "name": "Roger",
+      "waid": "5215634948177",
       "is_guest": false,
       "level": 1,
       "roles_done": []
     },
     {
-      "name": "Roger",
-      "waid": "5215634948177",
+      "name": "Claudia",
+      "waid": "5215586466230",
       "is_guest": false,
       "level": 1,
       "roles_done": []
@@ -43,23 +43,11 @@
     },
     {
       "name": "Evaluador de muletillas",
-      "difficulty": 2
+      "difficulty": 1
     },
     {
       "name": "Evaluador gramatical",
-      "difficulty": 3
-    },
-    {
-      "name": "Director de Table Topics",
-      "difficulty": 4
-    },
-    {
-      "name": "Toastmaster de la sesión",
-      "difficulty": 5
-    },
-    {
-      "name": "Evaluador general",
-      "difficulty": 6
+      "difficulty": 2
     }
   ]
 }

@@ -1,40 +1,54 @@
 {
   "round": 1,
   "pending": {
-    "Evaluador general": {
-      "candidate": "5219212671618",
-      "declined_by": [],
-      "accepted": false
-    },
-    "Toastmaster de la sesión": {
-      "candidate": "5219211787763",
-      "declined_by": [],
-      "accepted": false
-    },
-    "Director de Table Topics": {
-      "candidate": "5212293655442",
-      "declined_by": [],
-      "accepted": false
-    },
     "Evaluador gramatical": {
-      "candidate": "5215634948177",
-      "declined_by": [],
-      "accepted": false
+      "candidate": "5212293655442",
+      "declined_by": [
+        "5215634948177"
+      ],
+      "accepted": true
     },
-    "Evaluador de muletillas": {
+    "Evaluador del tiempo": {
       "candidate": "5212721073312",
       "declined_by": [],
-      "accepted": false
+      "accepted": true
+    },
+    "Evaluador de muletillas": {
+      "candidate": "5215634948177",
+      "declined_by": [
+        "5219212671618",
+        "5219211787763"
+      ],
+      "accepted": true
     }
   },
-  "accepted": {},
+  "accepted": {
+    "Evaluador del tiempo": {
+      "waid": "5212721073312",
+      "name": "Marcos"
+    },
+    "Evaluador de muletillas": {
+      "waid": "5215634948177",
+      "name": "Roger"
+    },
+    "Evaluador gramatical": {
+      "waid": "5212293655442",
+      "name": "Paco"
+    }
+  },
   "members_cycle": {
     "5219212671618": [],
-    "5212293655442": [],
-    "5212721073312": [],
+    "5212293655442": [
+      "Evaluador gramatical"
+    ],
+    "5212721073312": [
+      "Evaluador del tiempo"
+    ],
     "5219211787763": [],
-    "5215634948177": []
+    "5215634948177": [
+      "Evaluador de muletillas"
+    ]
   },
-  "last_summary": null,
+  "last_summary": "Reunión #1 — Resumen de roles\n- Evaluador del tiempo: Marcos\n- Evaluador de muletillas: Roger\n- Evaluador gramatical: Paco",
   "canceled": false
 }
