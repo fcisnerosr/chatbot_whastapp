@@ -31,7 +31,7 @@ Para pruebas locales expone el servidor con **ngrok**.
 ```text
 chatbot_whatsapp/
 ├─ src/
-│  ├─ app.py          # Servidor Flask (endpoints dinámicos /webhook/<club_slug>)
+│  ├─ app.py          # Servidor Flask (endpoint /webhook; club auto-resuelto por waid)
 │  ├─ models.py       # POO: Role, Member, Club + persistencia JSON
 │  └─ setup_club.py   # Script de semilla inicial para los clubes
 ├─ data/
@@ -133,8 +133,8 @@ Verás un mensaje de confirmación por cada club creado.
     Copia la URL pública que aparece (`https://xxxxx.ngrok-free.app`).
 
 3.  **Configurar Webhook en Gupshup:**
-    *   **Callback URL**: `https://<tu-url-ngrok>/webhook/<club_slug>`
-        *   Ejemplo para `club-demo`: `https://xxxxx.ngrok-free.app/webhook/club-demo`
+    *   **Callback URL**: `https://<tu-url-ngrok>/webhook`
+        *   Nota: El club se determina automáticamente por el número (waid) del remitente según `data/clubs/registry.json` y `data/clubs/<club_id>/club.json`.
     *   Asegúrate de que los eventos de mensajes estén activados.
 
 4.  **Prueba rápida (desde un número admin):**
