@@ -11,12 +11,23 @@
       "name": "Paco",
       "waid": "5212293655442",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
+      "level": 2,
+      "roles_done": [
+        "Evaluador gramatical"
+      ]
     },
     {
       "name": "Marcos",
       "waid": "5212721073312",
+      "is_guest": false,
+      "level": 2,
+      "roles_done": [
+        "Evaluador del tiempo"
+      ]
+    },
+    {
+      "name": "Sheila",
+      "waid": "5219211787763",
       "is_guest": false,
       "level": 1,
       "roles_done": []
@@ -25,16 +36,9 @@
       "name": "Roger",
       "waid": "5215634948177",
       "is_guest": false,
-      "level": 1,
-      "roles_done": []
-    },
-    {
-      "name": "Diana",
-      "waid": "5219211481302",
-      "is_guest": false,
       "level": 2,
       "roles_done": [
-        "Evaluador del tiempo"
+        "Evaluador de muletillas"
       ]
     }
   ],
@@ -45,11 +49,15 @@
     },
     {
       "name": "Evaluador de muletillas",
-      "difficulty": 1
+      "difficulty": 2
+    },
+    {
+      "name": "Toastmasters de la noche",
+      "difficulty": 3
     },
     {
       "name": "Evaluador gramatical",
-      "difficulty": 2
+      "difficulty": 4
     }
   ]
 }
