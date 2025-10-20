@@ -1287,16 +1287,30 @@ def webhook_post():
             # Si tiene rol pendiente y envía 1/2/3, procesar inmediatamente
             if is_number and role_pending and body in ("1", "2", "3"):
                 if body == "1":
-                    send_text(waid, handle_accept(ctx, waid))
+                    # ⭐ INTERCEPTAR: Si es Evaluador gramatical, iniciar flujo de palabra del día
+                    if role_pending == "Evaluador gramatical":
+                        st = ctx.state_store.load()
+                        set_session(waid, awaiting="word_step1_palabra", 
+                                   buffer={"role": role_pending, "waid": waid, "club": ctx.club_id, "round": st["round"]})
+                        send_text(waid, 
+                            "¡Excelente! Como Evaluador gramatical, compartes la *Palabra del Día*.\n\n"
+                            "📖 Envía la palabra:"
+                        )
+                    else:
+                        # Para otros roles, aceptación normal
+                        send_text(waid, handle_accept(ctx, waid))
+                        set_session(waid, mode="root", awaiting=None, buffer=None)
+                        send_text(waid, render_root_menu(waid))
                 elif body == "2":
                     send_text(waid, handle_reject(ctx, waid))
+                    set_session(waid, mode="root", awaiting=None, buffer=None)
+                    send_text(waid, render_root_menu(waid))
                 else:
                     # "3" = Responder después: confirmar y mantener pendiente
                     st = ctx.state_store.load()
                     send_text(waid, f"Queda pendiente tu respuesta para {role_pending} en la ronda #{st['round']} ({ctx.club_id}).")
-                # Después de gestionar invitación, mostrar menú raíz
-                set_session(waid, mode="root", awaiting=None, buffer=None)
-                send_text(waid, render_root_menu(waid))
+                    set_session(waid, mode="root", awaiting=None, buffer=None)
+                    send_text(waid, render_root_menu(waid))
                 continue
 
             # ---------------------- PRIORIDAD 2: Router por estado de sesión --------
@@ -1425,6 +1439,173 @@ def webhook_post():
                 set_session(waid, awaiting=None, buffer=None)
                 send_text(waid, render_admin_menu(ctx))
                 continue
+
+            # ==================== FLUJO: Palabra del Día (Evaluador gramatical) ====================
+            
+            # Paso 1: Recibir palabra
+            if awaiting == "word_step1_palabra":
+                buffer = s.get("buffer", {})
+                buffer["palabra"] = body_raw.strip()
+                set_session(waid, awaiting="word_step2_significado", buffer=buffer)
+                send_text(waid, "✍️ Ahora envía el significado de la palabra:")
+                continue
+
+            # Paso 2: Recibir significado
+            if awaiting == "word_step2_significado":
+                buffer = s.get("buffer", {})
+                buffer["significado"] = body_raw.strip()
+                set_session(waid, awaiting="word_step3_ejemplo", buffer=buffer)
+                send_text(waid, "💡 Finalmente, envía un ejemplo de uso de la palabra:")
+                continue
+
+            # Paso 3: Recibir ejemplo y mostrar resumen para confirmación
+            if awaiting == "word_step3_ejemplo":
+                buffer = s.get("buffer", {})
+                buffer["ejemplo"] = body_raw.strip()
+                set_session(waid, awaiting="word_confirm", buffer=buffer)
+                
+                # Mostrar resumen con opciones de confirmación
+                resumen = (
+                    f"📋 *Resumen de Palabra del Día*\n\n"
+                    f"📖 *Palabra:* {buffer['palabra']}\n\n"
+                    f"✍️ *Significado:* {buffer['significado']}\n\n"
+                    f"💡 *Ejemplo:* {buffer['ejemplo']}\n\n"
+                    f"¿Es correcta esta información?\n"
+                    f"1) ✅ Sí, confirmar y aceptar rol\n"
+                    f"2) ✏️ Editar palabra\n"
+                    f"3) ✏️ Editar significado\n"
+                    f"4) ✏️ Editar ejemplo\n"
+                    f"5) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # Confirmación: Usuario decide si confirmar o editar
+            if awaiting == "word_confirm" and is_number:
+                buffer = s.get("buffer", {})
+                
+                if body == "1":
+                    # ✅ CONFIRMAR: Guardar palabra del día y completar aceptación
+                    club_ctx = _CTX[buffer["club"]]
+                    st = club_ctx.state_store.load()
+                    
+                    # Guardar palabra del día en state.json
+                    st["word_of_the_day"] = {
+                        "palabra": buffer["palabra"],
+                        "significado": buffer["significado"],
+                        "ejemplo": buffer["ejemplo"],
+                        "waid": buffer["waid"],
+                        "nombre": pretty_name(club_ctx, buffer["waid"]),
+                        "round": buffer["round"]
+                    }
+                    club_ctx.state_store.save(st)
+                    
+                    # AHORA SÍ confirmar el rol de Evaluador gramatical
+                    result = handle_accept(club_ctx, buffer["waid"])
+                    send_text(waid, f"✅ {result}\n📖 Palabra del día guardada: '{buffer['palabra']}'")
+                    
+                    # Limpiar sesión y volver al menú principal
+                    set_session(waid, awaiting=None, buffer=None, mode="root")
+                    send_text(waid, render_root_menu(waid))
+                    continue
+                
+                elif body == "2":
+                    # ✏️ Editar palabra
+                    set_session(waid, awaiting="word_edit_palabra", buffer=buffer)
+                    send_text(waid, f"📖 Palabra actual: {buffer['palabra']}\n\nEnvía la nueva palabra:")
+                    continue
+                
+                elif body == "3":
+                    # ✏️ Editar significado
+                    set_session(waid, awaiting="word_edit_significado", buffer=buffer)
+                    send_text(waid, f"✍️ Significado actual: {buffer['significado']}\n\nEnvía el nuevo significado:")
+                    continue
+                
+                elif body == "4":
+                    # ✏️ Editar ejemplo
+                    set_session(waid, awaiting="word_edit_ejemplo", buffer=buffer)
+                    send_text(waid, f"💡 Ejemplo actual: {buffer['ejemplo']}\n\nEnvía el nuevo ejemplo:")
+                    continue
+                
+                elif body == "5":
+                    # ❌ CANCELAR: Limpiar todo y volver al menú
+                    send_text(waid, "❌ Palabra del día cancelada. La invitación de rol sigue pendiente.")
+                    set_session(waid, awaiting=None, buffer=None, mode="root")
+                    send_text(waid, render_root_menu(waid))
+                    continue
+                
+                else:
+                    # Opción inválida, volver a mostrar menú de confirmación
+                    send_text(waid, "Opción inválida. Envía 1, 2, 3, 4 o 5.")
+                    continue
+
+            # Edición: Re-capturar palabra
+            if awaiting == "word_edit_palabra":
+                buffer = s.get("buffer", {})
+                buffer["palabra"] = body_raw.strip()
+                set_session(waid, awaiting="word_confirm", buffer=buffer)
+                
+                # Volver a mostrar resumen
+                resumen = (
+                    f"📋 *Resumen de Palabra del Día*\n\n"
+                    f"📖 *Palabra:* {buffer['palabra']}\n\n"
+                    f"✍️ *Significado:* {buffer['significado']}\n\n"
+                    f"💡 *Ejemplo:* {buffer['ejemplo']}\n\n"
+                    f"¿Es correcta esta información?\n"
+                    f"1) ✅ Sí, confirmar y aceptar rol\n"
+                    f"2) ✏️ Editar palabra\n"
+                    f"3) ✏️ Editar significado\n"
+                    f"4) ✏️ Editar ejemplo\n"
+                    f"5) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # Edición: Re-capturar significado
+            if awaiting == "word_edit_significado":
+                buffer = s.get("buffer", {})
+                buffer["significado"] = body_raw.strip()
+                set_session(waid, awaiting="word_confirm", buffer=buffer)
+                
+                # Volver a mostrar resumen
+                resumen = (
+                    f"📋 *Resumen de Palabra del Día*\n\n"
+                    f"📖 *Palabra:* {buffer['palabra']}\n\n"
+                    f"✍️ *Significado:* {buffer['significado']}\n\n"
+                    f"💡 *Ejemplo:* {buffer['ejemplo']}\n\n"
+                    f"¿Es correcta esta información?\n"
+                    f"1) ✅ Sí, confirmar y aceptar rol\n"
+                    f"2) ✏️ Editar palabra\n"
+                    f"3) ✏️ Editar significado\n"
+                    f"4) ✏️ Editar ejemplo\n"
+                    f"5) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # Edición: Re-capturar ejemplo
+            if awaiting == "word_edit_ejemplo":
+                buffer = s.get("buffer", {})
+                buffer["ejemplo"] = body_raw.strip()
+                set_session(waid, awaiting="word_confirm", buffer=buffer)
+                
+                # Volver a mostrar resumen
+                resumen = (
+                    f"📋 *Resumen de Palabra del Día*\n\n"
+                    f"📖 *Palabra:* {buffer['palabra']}\n\n"
+                    f"✍️ *Significado:* {buffer['significado']}\n\n"
+                    f"💡 *Ejemplo:* {buffer['ejemplo']}\n\n"
+                    f"¿Es correcta esta información?\n"
+                    f"1) ✅ Sí, confirmar y aceptar rol\n"
+                    f"2) ✏️ Editar palabra\n"
+                    f"3) ✏️ Editar significado\n"
+                    f"4) ✏️ Editar ejemplo\n"
+                    f"5) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # ==================== FIN FLUJO: Palabra del Día ====================
 
             # ---------------------- PRIORIDAD 4: Comandos legacy (texto libre) ------
             # Compatibilidad con comandos de texto para usuarios que escriben en lugar de números
