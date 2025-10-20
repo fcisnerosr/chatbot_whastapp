@@ -1,8 +1,23 @@
 # app.py
 # --------------------------------------------------------------------------------------
-# WhatsApp roles bot (Flask + Gupshup)
-# Versión con buenas prácticas: validación de config, logging, persistencia atómica,
-# normalización de comandos y comentarios explicativos.
+# WhatsApp roles bot (Flask + Gupshup) - MULTI-CLUB con MENÚS NUMÉRICOS
+#
+# - Carga todos los clubes desde data/clubs/registry.json
+# - Cada club tiene su propio {club.json, state.json} en data/clubs/<club_id>/
+# - Asignación de roles con priorización por dificultad y ciclo de roles.
+# - Interfaz 100% por MENÚS numéricos para usuarios y administradores.
+#   • Miembro: ve su menú de miembro.
+#   • Admin: ve su menú de admin.
+#   • Admin y miembro: menú raíz que separa ambos.
+#   • Invitaciones: siempre ofrece 1 Aceptar / 2 Rechazar / 3 Responder después.
+#
+# .env mínimo:
+#   GUPSHUP_API_KEY=...
+#   GUPSHUP_APP_NAME=RolesClubBot
+#   GUPSHUP_SOURCE=917834811114
+#   CLUBS_DIR=data/clubs
+#   VERIFY_TOKEN=rolesclub-verify
+#   PORT=5000
 # --------------------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -11,6 +26,7 @@ import json
 import logging
 import os
 import random
+import re
 import tempfile
 import unicodedata
 from dataclasses import dataclass
@@ -23,13 +39,15 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from requests.exceptions import RequestException
 
-# ------------------------------------------------------------------------------
+# Modelo POO existente
+from models import Club, Member, Role
+
+# ======================================================================================
 # 1) Configuración y logging
-# ------------------------------------------------------------------------------
+# ======================================================================================
 
-load_dotenv()  # Lee variables desde .env si existe
+load_dotenv()
 
-# Configura logging (puedes cambiar el nivel con LOG_LEVEL=DEBUG/INFO/WARNING...)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -40,112 +58,77 @@ log = logging.getLogger("roles-bot")
 
 @dataclass(frozen=True)
 class Config:
-    """Config inmutable cargada desde variables de entorno (fail-fast)."""
-
     api_key: str
     app_name: str
     source: str  # E.164 SIN el '+'
     verify_token: str
-    admins: Set[str]  # E.164 SIN el '+'
     port: int
+    clubs_dir: Path
 
 
 def load_config() -> Config:
-    """Lee y valida la configuración requerida. Revienta si falta algo crítico."""
     missing: List[str] = []
     api_key = os.getenv("GUPSHUP_API_KEY")
     if not api_key:
         missing.append("GUPSHUP_API_KEY")
-
     source = os.getenv("GUPSHUP_SOURCE")
     if not source:
         missing.append("GUPSHUP_SOURCE")
-
     if missing:
-        raise RuntimeError(
-            f"Variables de entorno faltantes: {', '.join(missing)}. "
-            "Define un archivo .env o exporta variables antes de ejecutar."
-        )
+        raise RuntimeError(f"Faltan variables: {', '.join(missing)}")
 
-    app_name = os.getenv("GUPSHUP_APP_NAME", "RolesClubBotToastmasters")
+    app_name = os.getenv("GUPSHUP_APP_NAME", "RolesClubBot")
     verify = os.getenv("VERIFY_TOKEN", "rolesclub-verify")
-    admins = {n.strip() for n in os.getenv("ADMIN_NUMBERS", "").split(",") if n.strip()}
     port = int(os.getenv("PORT", "5000"))
-    return Config(api_key=api_key, app_name=app_name, source=source, verify_token=verify, admins=admins, port=port)
+    clubs_dir = Path(os.getenv("CLUBS_DIR", "data/clubs"))
+    return Config(
+        api_key=api_key,
+        app_name=app_name,
+        source=source,
+        verify_token=verify,
+        port=port,
+        clubs_dir=clubs_dir,
+    )
 
 
 CFG = load_config()
 HEADERS_FORM = {"apikey": CFG.api_key, "Content-Type": "application/x-www-form-urlencoded"}
 
-# ------------------------------------------------------------------------------
-# 2) Rutas de archivos
-# ------------------------------------------------------------------------------
 
-# Estructura esperada del proyecto:
-# <repo>/
-#  ├─ data/
-#  │   ├─ members.json
-#  │   └─ state.json
-#  └─ src/app.py  (este archivo)
-BASE_DIR = Path(__file__).resolve().parent.parent
-MEMBERS_FILE = BASE_DIR / "data" / "members.json"
-STATE_FILE = BASE_DIR / "data" / "state.json"
+# ======================================================================================
+# 2) Multi-club: registro y contexto por club
+# ======================================================================================
 
-if not MEMBERS_FILE.exists():
-    raise FileNotFoundError(
-        f"No se encontró {MEMBERS_FILE}. Crea data/members.json con estructura: "
-        '{"roles": [...], "members": [{"name": "...", "waid": "E164_sin_+"}, ...]}.'
-    )
-
-# ------------------------------------------------------------------------------
-# 3) Carga de catálogo (roles y miembros)
-# ------------------------------------------------------------------------------
-
-def load_members() -> Tuple[List[str], List[Dict[str, str]], Dict[str, Dict[str, str]]]:
-    """Lee y valida members.json; devuelve (roles, miembros, índice por waid)."""
-    with MEMBERS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    roles = data.get("roles", [])
-    members = data.get("members", [])
-
-    if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
-        raise ValueError("`roles` debe ser lista de strings en members.json")
-
-    if not isinstance(members, list):
-        raise ValueError("`members` debe ser lista en members.json")
-
-    idx: Dict[str, Dict[str, str]] = {}
-    for m in members:
-        if not isinstance(m, dict) or "waid" not in m or "name" not in m:
-            raise ValueError("Cada miembro debe tener claves 'name' y 'waid'")
-        waid = str(m["waid"]).strip()
-        if not waid.isdigit():
-            log.warning("WAID no parece E.164 (solo dígitos): %s", waid)
-        idx[waid] = m
-
-    return roles, members, idx
+REGISTRY_FILE = CFG.clubs_dir / "registry.json"
 
 
-ROLES, MEMBERS, MEMBERS_IDX = load_members()
-ALL_NUMBERS: Tuple[str, ...] = tuple(m["waid"] for m in MEMBERS)
+@dataclass
+class Ctx:
+    club_id: str
+    club: Club
+    state_store: "StateStore"
+    club_file: Path
+    admins: Set[str]
+    all_numbers: Tuple[str, ...]
+    members_index: Set[str]  # waids para resolver club por miembro
 
-# ------------------------------------------------------------------------------
-# 4) Persistencia del estado (JSON atómico con lock)
-# ------------------------------------------------------------------------------
 
+def load_registry() -> dict:
+    if REGISTRY_FILE.exists():
+        return json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+    return {"clubs": {}}
+
+
+# --- Persistencia del estado (JSON atómico con lock) ---
 def _dump_json_atomic(path: Path, obj: dict) -> None:
-    """Escribe JSON de forma atómica (escribe a fichero temporal y luego reemplaza)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as tmp:
         json.dump(obj, tmp, ensure_ascii=False, indent=2)
         tmp_path = Path(tmp.name)
-    os.replace(tmp_path, path)  # atómico en la mayoría de SOs
+    os.replace(tmp_path, path)
 
 
 class StateStore:
-    """Pequeña utilidad hilo-segura para cargar/guardar state.json."""
-
     def __init__(self, path: Path):
         self.path = path
         self._lock = Lock()
@@ -153,7 +136,14 @@ class StateStore:
     def load(self) -> dict:
         with self._lock:
             if not self.path.exists():
-                st = default_state()
+                st = {
+                    "round": 0,
+                    "pending": {},
+                    "accepted": {},
+                    "members_cycle": {},
+                    "last_summary": None,
+                    "canceled": False,
+                }
                 _dump_json_atomic(self.path, st)
                 return st
             return json.loads(self.path.read_text(encoding="utf-8"))
@@ -163,29 +153,104 @@ class StateStore:
             _dump_json_atomic(self.path, st)
 
 
-def default_state() -> dict:
-    """Estado inicial."""
-    return {
-        "round": 0,
-        "pending": {},  # role -> {"candidate": waid, "declined_by": [], "accepted": false}
-        "accepted": {},  # role -> {"waid": "...", "name": "..."}
-        "members_cycle": {m["waid"]: [] for m in MEMBERS},  # roles completados por miembro
-        "last_summary": None,
-        "canceled": False,
-    }
+# --- Carga de clubes al arranque ---
+_CTX: Dict[str, Ctx] = {}
 
 
-state_store = StateStore(STATE_FILE)
+def load_club_into_registry(club_id: str, meta: dict):
+    club_dir = CFG.clubs_dir / club_id
+    club_file = club_dir / "club.json"
+    state_file = club_dir / "state.json"
+    if not club_file.exists():
+        raise FileNotFoundError(f"[{club_id}] Falta {club_file}. Corre el semillador.")
 
-# ------------------------------------------------------------------------------
-# 5) Utilidades de negocio (envíos, elección de candidatos, textos)
-# ------------------------------------------------------------------------------
+    c = Club()
+    c.load_from_json(str(club_file))
+    st = StateStore(state_file)
+
+    s = st.load()
+    mc = s.get("members_cycle", {})
+    changed = False
+    for m in c.members:
+        if m.waid not in mc:
+            mc[m.waid] = []
+            changed = True
+    if changed:
+        s["members_cycle"] = mc
+    st.save(s)
+
+    admins = set(meta.get("admins", []))
+    ctx = Ctx(
+        club_id=club_id,
+        club=c,
+        state_store=st,
+        club_file=club_file,
+        admins=admins,
+        all_numbers=tuple(m.waid for m in c.members),
+        members_index={m.waid for m in c.members},
+    )
+    _CTX[club_id] = ctx
+    log.info("Cargado club %s (miembros=%d, admins=%d)", club_id, len(ctx.members_index), len(ctx.admins))
+
+
+def load_all_clubs():
+    reg = load_registry()
+    _CTX.clear()
+    for cid, meta in reg.get("clubs", {}).items():
+        load_club_into_registry(cid, meta)
+
+
+load_all_clubs()
+
+
+def admin_clubs(waid: str) -> List[str]:
+    return [cid for cid, ctx in _CTX.items() if waid in ctx.admins]
+
+
+def member_club(waid: str) -> Optional[str]:
+    for cid, ctx in _CTX.items():
+        if waid in ctx.members_index:
+            return cid
+    return None
+
+
+# ======================================================================================
+# 3) Utilidades (normalización, números MX y negocio)
+# ======================================================================================
+
+def norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    return s.strip().lower()
+
+
+def mx_public_from_internal(waid: str) -> str:
+    digits = "".join(ch for ch in waid if ch.isdigit())
+    if digits.startswith("521") and len(digits) >= 13:
+        return digits[-10:]
+    return digits
+
+
+def mx_internal_from_any(s: str) -> str:
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) == 10:
+        return "521" + digits
+    if digits.startswith("521") and len(digits) >= 13:
+        return digits
+    return digits
+
+
+def pending_candidates(st: dict, exclude_role: Optional[str] = None) -> Set[str]:
+    cands: Set[str] = set()
+    for r, info in st.get("pending", {}).items():
+        if exclude_role is not None and r == exclude_role:
+            continue
+        cand = info.get("candidate")
+        if cand:
+            cands.add(cand)
+    return cands
+
 
 def send_text(to_e164_no_plus: str, text: str) -> dict:
-    """
-    Envía texto por la API de Gupshup con manejo de errores.
-    Devuelve dict con resultado (útil para logs/depuración).
-    """
     url = "https://api.gupshup.io/wa/api/v1/msg"
     data = {
         "channel": "whatsapp",
@@ -206,7 +271,6 @@ def send_text(to_e164_no_plus: str, text: str) -> dict:
 
 
 def broadcast_text(numbers: Set[str] | List[str] | Tuple[str, ...], text: str) -> Dict[str, int]:
-    """Envía un texto a varios números y devuelve contadores de OK/fallo."""
     ok = fail = 0
     for n in numbers:
         res = send_text(n, text)
@@ -217,91 +281,149 @@ def broadcast_text(numbers: Set[str] | List[str] | Tuple[str, ...], text: str) -
     return {"ok": ok, "fail": fail}
 
 
-def pretty_name(waid: str) -> str:
-    m = MEMBERS_IDX.get(waid)
-    return m["name"] if m else waid
+def pretty_name(ctx: Ctx, waid: str) -> str:
+    m = next((m for m in ctx.club.members if m.waid == waid), None)
+    return m.name if m else waid
 
 
-def roles_left_for_member(waid: str) -> List[str]:
-    st = state_store.load()
-    done = set(st["members_cycle"].get(waid, []))
-    return [r for r in ROLES if r not in done]
+def role_min_level(ctx: Ctx, role_name: str) -> int:
+    r = next((r for r in ctx.club.roles if r.name == role_name), None)
+    return max(1, int(getattr(r, "difficulty", 1) or 1)) if r else 1
 
 
-def choose_candidate(role: str, excluded: Set[str]) -> Optional[str]:
-    """
-    Elige elegibles (no hayan hecho ese rol en su ciclo) y excluye ya propuestos/aceptados.
-    Si no hay elegibles, permite repetir evitando duplicar dentro de la ronda.
-    """
-    st = state_store.load()
-    eligible: List[str] = []
-    for m in MEMBERS:
-        w = m["waid"]
-        if w in excluded:
-            continue
-        done = set(st["members_cycle"].get(w, []))
-        if role not in done:
-            eligible.append(w)
-    if not eligible:
-        eligible = [m["waid"] for m in MEMBERS if m["waid"] not in excluded]
-    return random.choice(eligible) if eligible else None
+def choose_candidate_hier(ctx: Ctx, role: str, excluded: Set[str]) -> Optional[str]:
+    st = ctx.state_store.load()
+    min_lvl = role_min_level(ctx, role)
+
+    def lvl(m: Member) -> int:
+        return int(getattr(m, "level", 1) or 1)
+
+    def pool(filter_fn, allow_repeat: bool) -> List[str]:
+        res = []
+        for m in ctx.club.members:
+            if m.waid in excluded:
+                continue
+            if not filter_fn(m):
+                continue
+            done = set(st["members_cycle"].get(m.waid, []))
+            if not allow_repeat and role in done:
+                continue
+            res.append(m.waid)
+        return res
+
+    p = pool(lambda m: lvl(m) >= min_lvl, allow_repeat=False)
+    if p:
+        return random.choice(p)
+
+    p = pool(lambda m: lvl(m) >= min_lvl, allow_repeat=True)
+    if p:
+        return random.choice(p)
+
+    for L in range(min_lvl - 1, 0, -1):
+        p = pool(lambda m, L=L: lvl(m) == L, allow_repeat=False)
+        if p:
+            return random.choice(p)
+        p = pool(lambda m, L=L: lvl(m) == L, allow_repeat=True)
+        if p:
+            return random.choice(p)
+
+    return None
 
 
-def make_summary(st: dict) -> str:
-    lines = [f"🗓️ Reunión #{st['round']} – Roles asignados:"]
-    for role in ROLES:
-        if role in st["accepted"]:
-            w = st["accepted"][role]["waid"]
-            lines.append(f"• {role}: {pretty_name(w)}")
+# --- Admin helpers --------------------------------------------------------------------
+
+def admin_list_members(ctx: Ctx) -> str:
+    if not ctx.club.members:
+        return f"No hay miembros registrados aún en {ctx.club_id}."
+    lines = [f"Miembros de {ctx.club_id}"]
+    for m in ctx.club.members:
+        pub = mx_public_from_internal(m.waid)
+        lines.append(f"- {m.name} — {pub}  · nivel {getattr(m, 'level', 1)}")
+    admin_labels = []
+    for a in ctx.admins:
+        member = next((m for m in ctx.club.members if m.waid == a), None)
+        if member:
+            admin_labels.append(f"{member.name} ({mx_public_from_internal(a)})")
         else:
-            lines.append(f"• {role}: (pendiente)")
+            admin_labels.append(mx_public_from_internal(a))
+    if admin_labels:
+        lines.append("")
+        lines.append("Administradores: " + ", ".join(admin_labels))
     return "\n".join(lines)
 
 
-# Normalizador y tablas de comandos (evita problemas de acentos/mayúsculas)
-def norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    return s.strip().lower()
+def _find_member_by_waid_or_name(ctx: Ctx, token: str):
+    t_clean = token.strip()
+    digits = "".join(ch for ch in t_clean if ch.isdigit())
+    if digits:
+        target = mx_internal_from_any(digits)
+        m = next((m for m in ctx.club.members if m.waid == target), None)
+        if m:
+            return m
+    t_norm = norm(t_clean)
+    return next((m for m in ctx.club.members if norm(m.name) == t_norm), None)
 
 
-ADMIN_CMDS: Dict[str, str] = {
-    "iniciar": "start",
-    "/iniciar": "start",
-    "roles": "start",
-    "estado": "status",
-    "/estado": "status",
-    "cancelar": "cancel",
-    "/cancelar": "cancel",
-    "reset": "reset",
-    "/reset": "reset",
-}
+def admin_add_member(ctx: Ctx, name: str, raw_number: str, level: int = 1, is_guest: bool = False) -> str:
+    name = name.strip()
+    waid = mx_internal_from_any(raw_number)
+    if not name or not waid:
+        return "Formato no válido. Usa: Nombre, 55XXXXXXXX"
+    if any(m.waid == waid for m in ctx.club.members):
+        return "Ese número ya está registrado en el club."
 
-USER_CMDS: Dict[str, str] = {
-    "acepto": "accept",
-    "aceptar": "accept",
-    "si acepto": "accept",
-    "sí acepto": "accept",
-    "rechazo": "reject",
-    "no acepto": "reject",
-    "no puedo": "reject",
-    "rechazar": "reject",
-    "mi rol": "whoami",
-    "mirol": "whoami",
-    "miasignacion": "whoami",
-    "miasignacion": "whoami",
-    "hola": "hello",
-    "hi": "hello",
-    "hello": "hello",
-}
+    new_m = Member(name=name, waid=waid, is_guest=is_guest, level=level)
+    ctx.club.members.append(new_m)
 
-# ------------------------------------------------------------------------------
-# 6) Reglas de la ronda (mutan el state y envían mensajes)
-# ------------------------------------------------------------------------------
+    # estado
+    st = ctx.state_store.load()
+    st.setdefault("members_cycle", {})[waid] = []
+    ctx.state_store.save(st)
 
-def start_new_round(by_admin: str) -> str:
-    st = state_store.load()
+    # persistencia en disco
+    ctx.club.save_to_json(str(ctx.club_file))
+
+    # >>>>>>>>>> ACTUALIZA ÍNDICES EN MEMORIA <<<<<<<<<<
+    ctx.members_index.add(waid)
+    ctx.all_numbers = tuple(m.waid for m in ctx.club.members)
+
+    return f"Listo: {name} agregado a {ctx.club_id} (tel. {mx_public_from_internal(waid)}, nivel {level})."
+
+
+# --- reemplaza admin_remove_member ---
+def admin_remove_member(ctx: Ctx, waid_or_name: str) -> str:
+    target = _find_member_by_waid_or_name(ctx, waid_or_name)
+    if not target:
+        return "No encontré a esa persona. Ingresa 10 dígitos MX o el nombre exacto."
+
+    st = ctx.state_store.load()
+    in_pending = any(d["candidate"] == target.waid and not d.get("accepted") for d in st.get("pending", {}).values())
+    in_accepted = any(v["waid"] == target.waid for v in st.get("accepted", {}).values())
+    if in_pending or in_accepted:
+        return "No se puede eliminar ahora: tiene un rol pendiente o aceptado en esta ronda."
+
+    # quita del modelo y persiste
+    ctx.club.members = [m for m in ctx.club.members if m.waid != target.waid]
+    ctx.club.save_to_json(str(ctx.club_file))
+    st["members_cycle"].pop(target.waid, None)
+    ctx.state_store.save(st)
+
+    # >>>>>>>>>> ACTUALIZA ÍNDICES EN MEMORIA <<<<<<<<<<
+    if target.waid in ctx.members_index:
+        ctx.members_index.remove(target.waid)
+    ctx.all_numbers = tuple(m.waid for m in ctx.club.members)
+
+    return f"Eliminado de {ctx.club_id}: {target.name} (tel. {mx_public_from_internal(target.waid)})."
+
+
+# ======================================================================================
+# 4) Reglas de la ronda (multi-club)
+# ======================================================================================
+
+def start_new_round(ctx: Ctx, by_admin: str) -> str:
+    st = ctx.state_store.load()
     if any(not v.get("accepted") for v in st["pending"].values()):
-        return "Ya hay una ronda con roles pendientes."
+        return "Ya hay invitaciones pendientes. Primero cierra o cancela esa ronda."
 
     st["round"] += 1
     st["pending"] = {}
@@ -309,152 +431,274 @@ def start_new_round(by_admin: str) -> str:
     st["last_summary"] = None
     st["canceled"] = False
 
-    # Crea primer candidato por rol y avisa
-    for role in ROLES:
+    roles_sorted = sorted(ctx.club.roles, key=lambda r: int(getattr(r, "difficulty", 1) or 1), reverse=True)
+
+    for r in roles_sorted:
+        role = r.name
         excluded = set(a["waid"] for a in st["accepted"].values())
-        cand = choose_candidate(role, excluded)
+        excluded.update(pending_candidates(st))
+        cand = choose_candidate_hier(ctx, role, excluded)
         if not cand:
             continue
         st["pending"][role] = {"candidate": cand, "declined_by": [], "accepted": False}
-    state_store.save(st)
 
+    ctx.state_store.save(st)
+
+    # Invitación con menú 1/2/3
     for role, info in st["pending"].items():
         cand = info["candidate"]
         send_text(
             cand,
-            f"Hola {pretty_name(cand)} 👋\n"
-            f"Para la reunión #{st['round']} te propongo el rol *{role}*.\n\n"
-            f"Responde:\n• *ACEPTO* para confirmar\n• *RECHAZO* si no puedes\n\n"
-            f"(Si rechazas, se propondrá a otro miembro.)",
+            f"{pretty_name(ctx, cand)}, se te propone el rol {role} para la reunión #{st['round']}.\n"
+            "Elige una opción y envía solo el número:\n"
+            "1) Aceptar\n"
+            "2) Rechazar\n"
+            "3) Responder después"
         )
 
-    broadcast_text(CFG.admins, f"✅ Ronda #{st['round']} iniciada por {by_admin}. Escribe ESTADO para ver pendientes.")
-    return f"Ronda #{st['round']} iniciada."
+    assigned_roles = set(st["pending"].keys())
+    not_assigned = [r.name for r in ctx.club.roles if r.name not in assigned_roles]
+    if not_assigned:
+        broadcast_text(
+            ctx.admins,
+            f"[{ctx.club_id}] Algunos roles quedaron sin candidato: {', '.join(not_assigned)}. "
+            "Agrega más miembros o intenta de nuevo."
+        )
+
+    broadcast_text(ctx.all_numbers, f"[{ctx.club_id}] Iniciamos la ronda #{st['round']}.")
+    return f"Ronda #{st['round']} iniciada en {ctx.club_id}."
 
 
-def handle_accept(waid: str) -> str:
-    st = state_store.load()
+def handle_accept(ctx: Ctx, waid: str) -> str:
+    st = ctx.state_store.load()
     for role, info in st["pending"].items():
         if info["candidate"] == waid and not info["accepted"]:
             info["accepted"] = True
-            st["accepted"][role] = {"waid": waid, "name": pretty_name(waid)}
-
-            # Actualiza ciclo personal
+            st["accepted"][role] = {"waid": waid, "name": pretty_name(ctx, waid)}
             done_list = list(st["members_cycle"].get(waid, []))
             if role not in done_list:
                 done_list.append(role)
-            if len(done_list) >= len(ROLES):
-                done_list = []  # reinicia ciclo al completar todos
+            if len(done_list) >= len(ctx.club.roles):
+                done_list = []
             st["members_cycle"][waid] = done_list
+            member = next((m for m in ctx.club.members if m.waid == waid), None)
+            role_obj = next((r for r in ctx.club.roles if r.name == role), None)
+            if member and role_obj:
+                member.add_role(role_obj)
+                ctx.club.save_to_json(str(ctx.club_file))
+            ctx.state_store.save(st)
+            check_and_announce_if_complete(ctx)
+            return f"Aceptado: {role} por {pretty_name(ctx, waid)}."
+    return "No hay nada pendiente para aceptar."
 
-            state_store.save(st)
-            send_text(waid, f"🎉 ¡Gracias {pretty_name(waid)}! Quedaste como *{role}* en la reunión #{st['round']}.")
-            check_and_announce_if_complete()
-            return f"{pretty_name(waid)} aceptó {role}."
-    send_text(waid, "No tienes una propuesta de rol pendiente ahora mismo. Escribe *MI ROL* para verificar.")
-    return "Nada que aceptar."
 
-
-def handle_reject(waid: str) -> str:
-    st = state_store.load()
+def handle_reject(ctx: Ctx, waid: str) -> str:
+    st = ctx.state_store.load()
     for role, info in list(st["pending"].items()):
-        if info["candidate"] == waid and not info["accepted"]:
+        if info.get("candidate") == waid and not info.get("accepted"):
             info["declined_by"].append(waid)
+
             excluded = set(info["declined_by"])
-            excluded.update(a["waid"] for a in st["accepted"].values())
-            cand = choose_candidate(role, excluded)
+            excluded.update(a["waid"] for a in st.get("accepted", {}).values())
+            excluded.update(pending_candidates(st, exclude_role=role))
+
+            cand = choose_candidate_hier(ctx, role, excluded)
             if cand:
                 info["candidate"] = cand
-                state_store.save(st)
-                send_text(waid, f"Gracias por avisar, buscaremos otra opción para *{role}* 👍")
+                ctx.state_store.save(st)
                 send_text(
                     cand,
-                    f"Hola {pretty_name(cand)} 👋\n"
-                    f"¿Podrías tomar el rol *{role}* para la reunión #{st['round']}?\n"
-                    f"Responde *ACEPTO* o *RECHAZO*.",
+                    f"Se te propone el rol {role} en la reunión #{st['round']}.\n"
+                    "Elige una opción y envía solo el número:\n"
+                    "1) Aceptar\n"
+                    "2) Rechazar\n"
+                    "3) Responder después"
                 )
-                return f"{pretty_name(waid)} rechazó {role}. Nuevo candidato: {pretty_name(cand)}"
+                return f"Rechazado por {pretty_name(ctx, waid)}. Nuevo candidato: {pretty_name(ctx, cand)}."
             else:
                 del st["pending"][role]
-                state_store.save(st)
-                broadcast_text(CFG.admins, f"⚠️ No hay candidato disponible para {role}. Resolver manualmente.")
+                ctx.state_store.save(st)
+                broadcast_text(ctx.admins, f"[{ctx.club_id}] No hay más opciones para el rol: {role}.")
                 return "Sin candidatos."
-    send_text(waid, "No tienes propuesta de rol pendiente ahora. Escribe *MI ROL* para verificar.")
-    return "Nada que rechazar."
+    return "No hay nada pendiente para rechazar."
 
 
-def check_and_announce_if_complete() -> None:
-    st = state_store.load()
-    all_ok = all(role in st["accepted"] for role in ROLES)
+def make_summary(ctx: Ctx, st: dict) -> str:
+    lines = [f"Reunión #{st['round']} — Resumen de roles"]
+    for role in [r.name for r in ctx.club.roles]:
+        if role in st["accepted"]:
+            w = st["accepted"][role]["waid"]
+            lines.append(f"- {role}: {pretty_name(ctx, w)}")
+        else:
+            lines.append(f"- {role}: por confirmar")
+    return "\n".join(lines)
+
+
+def check_and_announce_if_complete(ctx: Ctx) -> None:
+    st = ctx.state_store.load()
+    all_ok = all(role in st["accepted"] for role in [r.name for r in ctx.club.roles])
     if not all_ok or st.get("canceled"):
         return
-    summary = make_summary(st)
+    summary = make_summary(ctx, st)
     if st.get("last_summary") == summary:
         return
     st["last_summary"] = summary
-    state_store.save(st)
-    broadcast_text(ALL_NUMBERS, f"✅ {summary}\n\n¡Nos vemos en la próxima reunión!")
-    broadcast_text(CFG.admins, "📣 Se anunció a todos los miembros.")
+    ctx.state_store.save(st)
+    broadcast_text(ctx.all_numbers, f"[{ctx.club_id}] {summary}")
 
 
-def who_am_i(waid: str) -> str:
-    st = state_store.load()
+def who_am_i(ctx: Ctx, waid: str) -> str:
+    st = ctx.state_store.load()
     for role, info in st["pending"].items():
         if info["candidate"] == waid and not info["accepted"]:
-            return f"Tienes pendiente el rol *{role}* en la ronda #{st['round']}.\nResponde *ACEPTO* o *RECHAZO*."
+            return (
+                f"Tienes una invitación pendiente: {role} en la ronda #{st['round']} ({ctx.club_id}).\n"
+                "Elige una opción y envía solo el número:\n"
+                "1) Aceptar\n"
+                "2) Rechazar\n"
+                "3) Responder después"
+            )
     for role, acc in st["accepted"].items():
         if acc["waid"] == waid:
-            return f"Ya aceptaste el rol *{role}* en la ronda #{st['round']}."
-    return "No tienes asignaciones pendientes. Si esperas una propuesta, consulta al admin."
+            return f"Confirmaste el rol {role} en la ronda #{st['round']} ({ctx.club_id})."
+    return "No tienes roles asignados ni pendientes."
 
 
-def status_text() -> str:
-    st = state_store.load()
-    lines = [make_summary(st), "", "Pendientes:"]
+def status_text(ctx: Ctx) -> str:
+    st = ctx.state_store.load()
+    lines = [make_summary(ctx, st), "", "Pendientes por confirmar:"]
     any_pending = False
     for role, info in st["pending"].items():
         if not info["accepted"]:
             any_pending = True
             cand = info["candidate"]
-            lines.append(f"• {role}: propuesto a {pretty_name(cand)} (declinaron: {len(info['declined_by'])})")
+            lines.append(f"- {role}: propuesto a {pretty_name(ctx, cand)} (rechazos: {len(info['declined_by'])})")
     if not any_pending:
-        lines.append("• (ninguno)")
+        lines.append("- Ninguno")
     if st.get("canceled"):
-        lines.append("\nEstado: ❌ Ronda cancelada.")
+        lines.append("\nEstado: Ronda cancelada.")
     return "\n".join(lines)
 
 
-def cancel_round(by_admin: str) -> str:
-    st = state_store.load()
+def cancel_round(ctx: Ctx, by_admin: str) -> str:
+    st = ctx.state_store.load()
     st["pending"] = {}
     st["accepted"] = {}
     st["last_summary"] = None
     st["canceled"] = True
-    state_store.save(st)
-    broadcast_text(ALL_NUMBERS, "⚠️ La ronda de roles fue *cancelada* por el administrador.")
-    broadcast_text(CFG.admins, f"❌ Ronda #{st['round']} cancelada por {by_admin}.")
-    return f"Ronda #{st['round']} cancelada."
+    ctx.state_store.save(st)
+    broadcast_text(ctx.all_numbers, f"[{ctx.club_id}] La ronda se canceló.")
+    return f"La ronda #{st['round']} fue cancelada."
 
 
-def reset_all(by_admin: str) -> str:
-    st = default_state()
-    state_store.save(st)
-    broadcast_text(CFG.admins, f"🔄 Estado completamente reiniciado por {by_admin}. (round=0)")
-    return "Estado reiniciado a fábrica."
+def reset_all(ctx: Ctx, by_admin: str) -> str:
+    st = {
+        "round": 0,
+        "pending": {},
+        "accepted": {},
+        "members_cycle": {m.waid: [] for m in ctx.club.members},
+        "last_summary": None,
+        "canceled": False,
+    }
+    ctx.state_store.save(st)
+    broadcast_text(ctx.all_numbers, f"[{ctx.club_id}] Se reinició el estado del club.")
+    return "Estado del club reiniciado."
 
-# ------------------------------------------------------------------------------
-# 7) Flask app (endpoints)
-# ------------------------------------------------------------------------------
+
+# ======================================================================================
+# 5) Sesiones y menús
+# ======================================================================================
+
+# Memoria en proceso para navegación por menús.
+SESSION: Dict[str, dict] = {}
+SLOCK = Lock()
+
+def get_session(waid: str) -> dict:
+    with SLOCK:
+        s = SESSION.get(waid)
+        if not s:
+            s = {"mode": "root", "club": None, "awaiting": None, "buffer": None}
+            SESSION[waid] = s
+        return s
+
+def set_session(waid: str, **kwargs) -> None:
+    with SLOCK:
+        s = SESSION.setdefault(waid, {"mode": "root", "club": None, "awaiting": None, "buffer": None})
+        s.update(kwargs)
+
+# ----- Menús -----
+
+def render_root_menu(waid: str) -> str:
+    mclub = member_club(waid)
+    aclubs = admin_clubs(waid)
+    opts = []
+    idx = 1
+    if mclub:
+        opts.append(f"{idx}) Menú de miembro ({mclub})"); idx += 1
+    if aclubs:
+        if len(aclubs) == 1:
+            opts.append(f"{idx}) Menú de admin ({aclubs[0]})"); idx += 1
+        else:
+            opts.append(f"{idx}) Menú de admin (elegir club)"); idx += 1
+    opts.append(f"{idx}) Mi estado de rol") ; idx += 1
+    return "Elige una opción y envía solo el número:\n" + "\n".join(opts)
+
+def render_member_menu(ctx: Ctx) -> str:
+    return (
+        f"[{ctx.club_id}] Menú miembro\n"
+        "Elige una opción y envía solo el número:\n"
+        "1) Mi rol (pendiente/confirmado)\n"
+        "2) Estado de la ronda\n"
+        "9) Volver"
+    )
+
+def render_admin_club_picker(aclubs: List[str]) -> str:
+    lines = ["Elige club para administrar (envía solo el número):"]
+    for i, cid in enumerate(aclubs, 1):
+        lines.append(f"{i}) {cid}")
+    lines.append("9) Volver")
+    return "\n".join(lines)
+
+def render_admin_menu(ctx: Ctx) -> str:
+    return (
+        f"[{ctx.club_id}] Menú admin\n"
+        "Elige una opción y envía solo el número:\n"
+        "1) Iniciar ronda\n"
+        "2) Ver estado\n"
+        "3) Cancelar ronda\n"
+        "4) Resetear estado\n"
+        "5) Ver miembros\n"
+        "6) Agregar miembro\n"
+        "7) Eliminar miembro\n"
+        "8) Cambiar de club\n"
+        "9) Volver"
+    )
+
+def send_invite_menu(ctx: Ctx, waid: str, role: str, round_no: int) -> None:
+    send_text(
+        waid,
+        f"Invitación pendiente: {role} en la reunión #{round_no} ({ctx.club_id}).\n"
+        "Elige una opción y envía solo el número:\n"
+        "1) Aceptar\n"
+        "2) Rechazar\n"
+        "3) Responder después"
+    )
+
+# ======================================================================================
+# 6) Flask app (endpoints y webhook)
+# ======================================================================================
 
 app = Flask(__name__)
 
+
 @app.route("/", methods=["GET"])
 def health():
-    """Endpoint de salud (útil para pruebas o monitoreo)."""
-    return {"ok": True, "app": CFG.app_name, "roles": ROLES, "members": len(MEMBERS)}
+    info = {}
+    for cid, ctx in _CTX.items():
+        info[cid] = {"members": len(ctx.members_index), "roles": [r.name for r in ctx.club.roles]}
+    return {"ok": True, "app": CFG.app_name, "clubs": info}
 
 
-# Verificación tipo FB/Gupshup (GET). Útil si activas el modo de verificación.
 @app.route("/webhook", methods=["GET"])
 def webhook_get():
     mode = request.args.get("hub.mode")
@@ -465,9 +709,57 @@ def webhook_get():
     return "ok", 200
 
 
+def extract_trailing_club_id(text: str) -> Optional[str]:
+    t = text.strip()
+    m = re.search(r"\[([^\]]+)\]\s*$", t)
+    if m:
+        last = m.group(1).strip()
+        return last if last in _CTX else None
+    parts = t.split()
+    if len(parts) >= 2:
+        last = parts[-1].strip()
+        if last in _CTX:
+            return last
+    return None
+
+
+def strip_trailing_club(text: str, cid: str) -> str:
+    t = text.strip()
+    t = re.sub(rf"\s*\[\s*{re.escape(cid)}\s*\]\s*$", "", t, flags=re.IGNORECASE)
+    t = re.sub(rf"\s+{re.escape(cid)}\s*$", "", t, flags=re.IGNORECASE)
+    return t.strip()
+
+
+def infer_user_club(waid: str, explicit_cid: Optional[str] = None) -> Optional[str]:
+    if explicit_cid and explicit_cid in _CTX:
+        return explicit_cid
+    cid = member_club(waid)
+    if cid:
+        return cid
+    candidates = []
+    for cid, ctx in _CTX.items():
+        st = ctx.state_store.load()
+        for info in st.get("pending", {}).values():
+            if info.get("candidate") == waid and not info.get("accepted"):
+                candidates.append(cid); break
+        for info in st.get("accepted", {}).values():
+            if info.get("waid") == waid:
+                candidates.append(cid); break
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def has_pending_invite(ctx: Ctx, waid: str) -> Optional[str]:
+    st = ctx.state_store.load()
+    for role, info in st.get("pending", {}).items():
+        if info.get("candidate") == waid and not info.get("accepted"):
+            return role
+    return None
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook_post():
-    """Recibe eventos de Gupshup (formato Meta v3). Responde 200 siempre para evitar reintentos."""
     data = request.get_json(force=True, silent=True) or {}
     try:
         value = (
@@ -475,8 +767,6 @@ def webhook_post():
             .get("changes", [{}])[0]
             .get("value", {})
         )
-
-        # Mensajes entrantes
         for msg in value.get("messages", []):
             if msg.get("type") != "text":
                 continue
@@ -484,49 +774,197 @@ def webhook_post():
             body_raw = msg.get("text", {}).get("body", "")
             body = norm(body_raw)
             log.info("Mensaje de %s: %s", waid, body)
+            s = get_session(waid)
 
-            # Comandos admin
-            if waid in CFG.admins and body in ADMIN_CMDS:
-                cmd = ADMIN_CMDS[body]
-                if cmd == "start":
-                    out = start_new_round(by_admin=pretty_name(waid))
-                    send_text(waid, out)
-                elif cmd == "status":
-                    send_text(waid, status_text())
-                elif cmd == "cancel":
-                    out = cancel_round(pretty_name(waid))
-                    send_text(waid, out)
-                elif cmd == "reset":
-                    out = reset_all(pretty_name(waid))
-                    send_text(waid, out)
-                continue  # siguiente mensaje
+            # ---------------------- 0) Si viene un número puro ----------------------
+            is_number = re.fullmatch(r"\d{1,3}", body) is not None
 
-            # Comandos usuario
-            if body in USER_CMDS:
-                action = USER_CMDS[body]
-                if action == "accept":
-                    handle_accept(waid)
-                elif action == "reject":
-                    handle_reject(waid)
-                elif action == "whoami":
-                    send_text(waid, who_am_i(waid))
-                elif action == "hello":
-                    send_text(waid, "¡Hola! Soy RolesClubBot 🤖. ¿En qué te ayudo?")
+            # Resolver club por defecto
+            if not s.get("club"):
+                mc = member_club(waid)
+                acls = admin_clubs(waid)
+                if mc:
+                    set_session(waid, club=mc)
+                elif len(acls) == 1:
+                    set_session(waid, club=acls[0])
+
+            # Prioridad: si hay invitación pendiente en el club actual, 1/2/3 operan eso
+            current_cid = s.get("club") or infer_user_club(waid, extract_trailing_club_id(body_raw))
+            if current_cid and current_cid in _CTX:
+                ctx = _CTX[current_cid]
+                role_pending = has_pending_invite(ctx, waid)
             else:
-                send_text(waid, f"Recibí: {body_raw}. Escribe *MI ROL*, *ACEPTO* o *RECHAZO*.")
+                ctx = None
+                role_pending = None
 
-        # También podrías procesar value.get("statuses") si te interesa
-        if "statuses" in value:
-            log.debug("Statuses: %s", value["statuses"])
+            if is_number and role_pending and body in ("1", "2", "3"):
+                if body == "1":
+                    send_text(waid, handle_accept(ctx, waid))
+                elif body == "2":
+                    send_text(waid, handle_reject(ctx, waid))
+                else:
+                    # Responder después: solo confirmar recepción y mantener pendiente
+                    st = ctx.state_store.load()
+                    send_text(waid, f"Queda pendiente tu respuesta para {role_pending} en la ronda #{st['round']} ({ctx.club_id}).")
+                # Después de gestionar, mostrar menú raíz
+                set_session(waid, mode="root", awaiting=None, buffer=None)
+                send_text(waid, render_root_menu(waid))
+                continue
+
+            # ---------------------- 1) Router por estado de sesión -------------------
+            awaiting = s.get("awaiting")
+            if is_number:
+                # Menú raíz
+                if s.get("mode") == "root":
+                    idx = 1
+                    mclub = member_club(waid)
+                    aclubs = admin_clubs(waid)
+                    if mclub:
+                        if body == str(idx):
+                            set_session(waid, mode="member", club=mclub, awaiting=None)
+                            send_text(waid, render_member_menu(_CTX[mclub])); continue
+                        idx += 1
+                    if aclubs:
+                        if len(aclubs) == 1:
+                            if body == str(idx):
+                                set_session(waid, mode="admin", club=aclubs[0], awaiting=None)
+                                send_text(waid, render_admin_menu(_CTX[aclubs[0]])); continue
+                            idx += 1
+                        else:
+                            if body == str(idx):
+                                set_session(waid, mode="admin_pick", awaiting="pick_admin_club")
+                                send_text(waid, render_admin_club_picker(aclubs)); continue
+                            idx += 1
+                    if body == str(idx):
+                        # Mi estado de rol
+                        cid = infer_user_club(waid)
+                        if cid and cid in _CTX:
+                            send_text(waid, who_am_i(_CTX[cid], waid))
+                        else:
+                            send_text(waid, "No se pudo determinar tu club. Pide a un admin que te agregue.")
+                        send_text(waid, render_root_menu(waid)); continue
+
+                # Picker de club admin
+                if s.get("mode") == "admin_pick" and awaiting == "pick_admin_club":
+                    aclubs = admin_clubs(waid)
+                    if body == "9":
+                        set_session(waid, mode="root", awaiting=None, buffer=None)
+                        send_text(waid, render_root_menu(waid)); continue
+                    try:
+                        idx = int(body) - 1
+                        cid = aclubs[idx]
+                        set_session(waid, mode="admin", club=cid, awaiting=None)
+                        send_text(waid, render_admin_menu(_CTX[cid])); continue
+                    except Exception:
+                        send_text(waid, render_admin_club_picker(aclubs)); continue
+
+                # Menú miembro
+                if s.get("mode") == "member" and current_cid and current_cid in _CTX:
+                    ctx = _CTX[current_cid]
+                    if body == "1":
+                        send_text(waid, who_am_i(ctx, waid))
+                        send_text(waid, render_member_menu(ctx)); continue
+                    if body == "2":
+                        send_text(waid, status_text(ctx))
+                        send_text(waid, render_member_menu(ctx)); continue
+                    if body == "9":
+                        set_session(waid, mode="root", awaiting=None, buffer=None)
+                        send_text(waid, render_root_menu(waid)); continue
+
+                # Menú admin
+                if s.get("mode") == "admin" and current_cid and current_cid in _CTX:
+                    ctx = _CTX[current_cid]
+                    if body == "1":
+                        send_text(waid, start_new_round(ctx, pretty_name(ctx, waid)))
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "2":
+                        send_text(waid, status_text(ctx))
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "3":
+                        send_text(waid, cancel_round(ctx, pretty_name(ctx, waid)))
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "4":
+                        send_text(waid, reset_all(ctx, pretty_name(ctx, waid)))
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "5":
+                        send_text(waid, admin_list_members(ctx))
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "6":
+                        set_session(waid, awaiting="admin_add_member", buffer=None)
+                        send_text(waid, "Envía: Nombre, 55XXXXXXXX")
+                        continue
+                    if body == "7":
+                        set_session(waid, awaiting="admin_remove_member", buffer=None)
+                        send_text(waid, "Envía el número de 10 dígitos o el nombre exacto a eliminar")
+                        continue
+                    if body == "8":
+                        aclubs = admin_clubs(waid)
+                        if len(aclubs) > 1:
+                            set_session(waid, mode="admin_pick", awaiting="pick_admin_club")
+                            send_text(waid, render_admin_club_picker(aclubs)); continue
+                        send_text(waid, render_admin_menu(ctx)); continue
+                    if body == "9":
+                        set_session(waid, mode="root", awaiting=None, buffer=None)
+                        send_text(waid, render_root_menu(waid)); continue
+
+            # Flujos que requieren texto libre (agregar/eliminar)
+            if awaiting == "admin_add_member" and s.get("mode") == "admin" and ctx:
+                tail = body_raw.strip()
+                if "," in tail:
+                    name, num = tail.split(",", 1)
+                else:
+                    parts = tail.rsplit(" ", 1)
+                    if len(parts) != 2:
+                        send_text(waid, "Formato no válido. Usa: Nombre, 55XXXXXXXX")
+                        continue
+                    name, num = parts[0], parts[1]
+                out = admin_add_member(ctx, name.strip(), num.strip())
+                send_text(waid, out)
+                set_session(waid, awaiting=None, buffer=None)
+                send_text(waid, render_admin_menu(ctx))
+                continue
+
+            if awaiting == "admin_remove_member" and s.get("mode") == "admin" and ctx:
+                tail = body_raw.strip()
+                out = admin_remove_member(ctx, tail)
+                send_text(waid, out)
+                set_session(waid, awaiting=None, buffer=None)
+                send_text(waid, render_admin_menu(ctx))
+                continue
+
+            # ---------------------- 2) Fallbacks y compatibilidad --------------------
+            # Compatibilidad con comandos texto (por si alguien escribe MI ROL, etc.)
+            if body in ("mi rol", "mi rol?", "whoami"):
+                cid = infer_user_club(waid, extract_trailing_club_id(body_raw))
+                if cid and cid in _CTX:
+                    send_text(waid, who_am_i(_CTX[cid], waid))
+                else:
+                    send_text(waid, "No se pudo determinar tu club. Pide a un admin que te agregue.")
+                send_text(waid, render_root_menu(waid))
+                continue
+
+            if body in ("acepto", "accept") and ctx:
+                send_text(waid, handle_accept(ctx, waid))
+                send_text(waid, render_root_menu(waid))
+                continue
+
+            if body in ("rechazo", "reject") and ctx:
+                send_text(waid, handle_reject(ctx, waid))
+                send_text(waid, render_root_menu(waid))
+                continue
+
+            # Mensaje inicial por defecto
+            send_text(waid, render_root_menu(waid))
 
     except Exception:
         log.exception("Error procesando webhook; payload=%s", data)
 
     return jsonify({"status": "ok"})
 
-# ------------------------------------------------------------------------------
-# 8) Main
-# ------------------------------------------------------------------------------
+
+# ======================================================================================
+# 7) Main
+# ======================================================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=CFG.port, debug=False)
