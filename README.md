@@ -15,27 +15,63 @@ License: Proprietary
 ---
 ## Descripción
 
-Bot en Python + Flask que administra rondas y asigna roles de una reunión (Toastmasters). Envía propuestas de rol por WhatsApp usando Gupshup API. Para pruebas locales expone el servidor con ngrok.
+Bot en **Python + Flask** que administra rondas y asigna roles de una reunión (Toastmasters). Envía propuestas de rol por WhatsApp usando **Gupshup API**.
+Para pruebas locales expone el servidor con **ngrok**.
 
-Estructura principal:
-```
-chatbot_whastapp/
-├─ src/             # código fuente
-│  └─ app.py        # servidor Flask (endpoints / y /webhook)
-├─ data/             # datos locales (no públicos)
-│  ├─ members.json   # catálogo de miembros y roles disponibles
-│  └─ state.json     # estado persistente (se autogenera si no existe)
-├─ scripts/          # utilidades
-├─ notebooks/        # exploración
-├─ tests/            # pruebas
-├─ environment.yml   # entorno conda/mamba
-├─ pyproject.toml
+**Nueva implementación (v1.2 - Multi-Club):**
+- El sistema ahora soporta **múltiples clubes** de forma simultánea y aislada.
+- La estructura de datos se organiza en subdirectorios, uno por cada club (`data/<club_slug>`).
+- El webhook de Gupshup se vuelve dinámico para dirigir los mensajes al club correcto.
+- Se introduce **POO** con `src/models.py` para una gestión robusta de roles, miembros y clubes.
+- Se utiliza `src/setup_club.py` para **sembrar** el estado inicial de uno o más clubes.
+
+---
+## Estructura principal
+
+```text
+chatbot_whatsapp/
+├─ src/
+│  ├─ app.py          # Servidor Flask (endpoints dinámicos /webhook/<club_slug>)
+│  ├─ models.py       # POO: Role, Member, Club + persistencia JSON
+│  └─ setup_club.py   # Script de semilla inicial para los clubes
+├─ data/
+│  ├─ club-demo/      # Slug del primer club
+│  │  ├─ club.json
+│  │  └─ state.json
+│  └─ club-toastmasters/ # Slug del segundo club
+│     ├─ club.json
+│     └─ state.json
+├─ environment.yml    # Entorno conda/mamba
 └─ README.md
 ```
 
-Roles y comandos (resumen):
-* **Admin** (debes estar en `ADMIN_NUMBERS` del `.env`): `INICIAR`, `ESTADO`, `CANCELAR`, `RESET`
-* **Usuario**: `ACEPTO`, `RECHAZO`, `MI ROL`, `HOLA`
+---
+## Comandos del Bot
+
+El bot responde a comandos de administradores y de usuarios estándar.
+
+#### Comandos de Administrador
+(Solo para números en `ADMIN_NUMBERS`)
+
+| Comando | Descripción |
+|---|---|
+| `INICIAR` | Comienza una nueva ronda de asignación de roles. |
+| `ESTADO` | Muestra un resumen de la ronda actual. |
+| `CANCELAR` | Cancela la ronda actual. |
+| `RESET` | **(Peligroso)** Reinicia el estado del bot a cero. |
+| `MIEMBROS` | Lista todos los miembros del club con su waid y nivel. |
+| `AGREGAR Nombre, 521...` | Añade un nuevo miembro al club. |
+| `ELIMINAR 521...` o `Nombre` | Elimina un miembro del club. |
+
+#### Comandos de Usuario
+(Disponibles para todos)
+
+| Comando | Descripción |
+|---|---|
+| `ACEPTO` | Confirma el rol propuesto. |
+| `RECHAZO` | Rechaza el rol propuesto. |
+| `MI ROL` | Recuerda el rol asignado o pendiente. |
+| `HOLA` | Saluda al bot (útil para el sandbox de Gupshup). |
 
 ---
 ## Requisitos
@@ -69,39 +105,42 @@ Roles y comandos (resumen):
     * Provee un archivo `.env.example` (sin secretos) para el equipo.
 
 ---
+## 🧩 Inicialización del Catálogo (Semilla)
+
+> **Esta sección es obligatoria la primera vez.**
+
+Genera la estructura de directorios y los archivos `data/<club_slug>/club.json` para los clubes definidos en el script.
+Esto debe hacerse **antes de la primera vez que corras `app.py`**:
+
+```bash
+python src/setup_club.py
+```
+Verás un mensaje de confirmación por cada club creado.
+
+---
+
 ## Ejecución local + ngrok + Webhook
 
 1.  **Levantar Flask (en una terminal):**
-    ```
+    ```bash
     python src/app.py
     ```
-    (verás “Running on `http://127.0.0.1:5000`”)
 
-2.  **Autenticar ngrok (una sola vez por equipo/PC):**
-    ```
-    ngrok config add-authtoken <TU_AUTHTOKEN_PRIVADO>
-    ```
-
-3.  **Exponer el puerto (en otra terminal):**
-    ```
+2.  **Exponer el puerto con ngrok (en otra terminal):**
+    ```bash
     ngrok http 5000
     ```
-    Copia la URL pública que aparece (`https://xxxxx.ngrok-free.app`)
+    Copia la URL pública que aparece (`https://xxxxx.ngrok-free.app`).
 
-4.  **Configurar Webhook en Gupshup (App > Webhooks > Add/Edit):**
-    * `Callback URL`: `https://xxxxx.ngrok-free.app/webhook`
-    * `Payload`: `Meta format (v3)`
-    * `Eventos`: `Message`, `Sent`, `Delivered`, `Read`, `Failed`
+3.  **Configurar Webhook en Gupshup:**
+    *   **Callback URL**: `https://<tu-url-ngrok>/webhook/<club_slug>`
+        *   Ejemplo para `club-demo`: `https://xxxxx.ngrok-free.app/webhook/club-demo`
+    *   Asegúrate de que los eventos de mensajes estén activados.
 
-5.  **Regla Sandbox (Gupshup):**
-    * Cada miembro debe escribir “hola” al número sandbox para habilitar recepción durante 24h. Repetir si pasa el tiempo.
-    * Otra alternativa es compartir el link del bot en etapa de sandbox, dicho link está en gupshup.ai y en las configuraciones de la app creada, en la sección de `"Opt-ins"`, desplegar `"Onboarding mechanism"`, desplegar más abajo para que en la sección de `"Click URL"`, justo debajo está el link para compartir a los miembros del club que participan en Toastmasters.
-
-6.  **Prueba rápida (desde el número admin):**
-    * Enviar “hola” al sandbox.
-    * Enviar “INICIAR” para comenzar una ronda.
-    * Enviar “ESTADO” para ver pendientes.
-    * Responder desde los miembros con “ACEPTO” o “RECHAZO”.
+4.  **Prueba rápida (desde un número admin):**
+    *   Envía `HOLA` al número de WhatsApp del bot.
+    *   Envía `INICIAR` para comenzar una ronda en el club correspondiente.
+    *   Los miembros responden `ACEPTO` / `RECHAZO`.
 
 **Consejo:** Abre `http://127.0.0.1:4040` para inspeccionar requests/responses de ngrok.
 
