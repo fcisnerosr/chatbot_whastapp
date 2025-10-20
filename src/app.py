@@ -1287,7 +1287,7 @@ def webhook_post():
             # Si tiene rol pendiente y envía 1/2/3, procesar inmediatamente
             if is_number and role_pending and body in ("1", "2", "3"):
                 if body == "1":
-                    # ⭐ INTERCEPTAR: Si es Evaluador gramatical, iniciar flujo de palabra del día
+                    # ⭐ INTERCEPTAR: Flujos especiales para ciertos roles
                     if role_pending == "Evaluador gramatical":
                         st = ctx.state_store.load()
                         set_session(waid, awaiting="word_step1_palabra", 
@@ -1295,6 +1295,14 @@ def webhook_post():
                         send_text(waid, 
                             "¡Excelente! Como Evaluador gramatical, compartes la *Palabra del Día*.\n\n"
                             "📖 Envía la palabra:"
+                        )
+                    elif role_pending == "Toastmasters de la noche":
+                        st = ctx.state_store.load()
+                        set_session(waid, awaiting="theme_step1_topic", 
+                                    buffer={"role": role_pending, "waid": waid, "club": ctx.club_id, "round": st["round"]})
+                        send_text(waid, 
+                            "¡Excelente! Como Toastmaster de la noche, defines la temática de la sesión.\n\n"
+                            "📝 Envía la temática:"
                         )
                     else:
                         # Para otros roles, aceptación normal
@@ -1606,6 +1614,84 @@ def webhook_post():
                 continue
 
             # ==================== FIN FLUJO: Palabra del Día ====================
+
+            # ==================== FLUJO: Temática de la Sesión (Toastmaster) ====================
+
+            # Paso 1: Recibir temática y mostrar confirmación
+            if awaiting == "theme_step1_topic":
+                buffer = s.get("buffer", {})
+                buffer["topic"] = body_raw.strip()
+                set_session(waid, awaiting="theme_confirm", buffer=buffer)
+                
+                resumen = (
+                    f"📝 *Temática de la sesión:* {buffer['topic']}\n\n"
+                    f"¿Es correcta esta temática?\n"
+                    f"1) ✅ Sí, confirmar\n"
+                    f"2) ✏️ Editar temática\n"
+                    f"3) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # Confirmación: Usuario decide si confirmar o editar
+            if awaiting == "theme_confirm" and is_number:
+                buffer = s.get("buffer", {})
+                
+                if body == "1":
+                    # ✅ CONFIRMAR: Guardar temática y completar aceptación
+                    club_ctx = _CTX[buffer["club"]]
+                    st = club_ctx.state_store.load()
+                    
+                    st["session_theme"] = {
+                        "topic": buffer["topic"],
+                        "waid": buffer["waid"],
+                        "nombre": pretty_name(club_ctx, buffer["waid"]),
+                        "round": buffer["round"]
+                    }
+                    club_ctx.state_store.save(st)
+                    
+                    # AHORA SÍ confirmar el rol
+                    result = handle_accept(club_ctx, buffer["waid"])
+                    send_text(waid, f"✅ {result}\n📝 Temática guardada: '{buffer['topic']}'")
+                    
+                    set_session(waid, awaiting=None, buffer=None, mode="root")
+                    send_text(waid, render_root_menu(waid))
+                    continue
+                
+                elif body == "2":
+                    # ✏️ Editar temática
+                    set_session(waid, awaiting="theme_edit_topic", buffer=buffer)
+                    send_text(waid, f"📝 Temática actual: {buffer['topic']}\n\nEnvía la nueva temática:")
+                    continue
+
+                elif body == "3":
+                    # ❌ CANCELAR
+                    send_text(waid, "❌ Temática cancelada. La invitación de rol sigue pendiente.")
+                    set_session(waid, awaiting=None, buffer=None, mode="root")
+                    send_text(waid, render_root_menu(waid))
+                    continue
+                
+                else:
+                    send_text(waid, "Opción inválida. Envía 1, 2 o 3.")
+                    continue
+
+            # Edición: Re-capturar temática
+            if awaiting == "theme_edit_topic":
+                buffer = s.get("buffer", {})
+                buffer["topic"] = body_raw.strip()
+                set_session(waid, awaiting="theme_confirm", buffer=buffer)
+                
+                resumen = (
+                    f"📝 *Temática de la sesión:* {buffer['topic']}\n\n"
+                    f"¿Es correcta esta temática?\n"
+                    f"1) ✅ Sí, confirmar\n"
+                    f"2) ✏️ Editar temática\n"
+                    f"3) ❌ Cancelar"
+                )
+                send_text(waid, resumen)
+                continue
+
+            # ==================== FIN FLUJO: Temática de la Sesión ====================
 
             # ---------------------- PRIORIDAD 4: Comandos legacy (texto libre) ------
             # Compatibilidad con comandos de texto para usuarios que escriben en lugar de números
