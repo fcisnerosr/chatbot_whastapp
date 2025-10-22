@@ -36,10 +36,8 @@
       "name": "Roger",
       "waid": "5215634948177",
       "is_guest": false,
-      "level": 2,
-      "roles_done": [
-        "Evaluador de muletillas"
-      ]
+      "level": 1,
+      "roles_done": []
     }
   ],
   "roles": [

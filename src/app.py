@@ -312,18 +312,22 @@ def admin_clubs(waid: str) -> List[str]:
     """
     return [cid for cid, ctx in _CTX.items() if waid in ctx.admins]
 
+def member_clubs(waid: str) -> List[str]:
+    """
+    Devuelve todos los club_ids donde el usuario figura como miembro.
+    """
+    return [cid for cid, ctx in _CTX.items() if waid in ctx.members_index]
+
 
 def member_club(waid: str) -> Optional[str]:
     """
-    Devuelve el club_id al que pertenece el waid como miembro.
+    Devuelve un club_id al que pertenece el waid como miembro.
     
-    Nota: Si un miembro está en múltiples clubes (caso inusual), devuelve el primero.
-    Si no está en ninguno, devuelve None.
+    Nota: Puede existir en múltiples clubes; en ese caso devuelve el primero.
+    Usa member_clubs() si necesitas la lista completa.
     """
-    for cid, ctx in _CTX.items():
-        if waid in ctx.members_index:
-            return cid
-    return None
+    clubs = member_clubs(waid)
+    return clubs[0] if clubs else None
 
 
 # ======================================================================================
@@ -944,7 +948,7 @@ def reset_all(ctx: Ctx, by_admin: str) -> str:
 # Arquitectura:
 # - SESSION: Dict global que almacena estado de navegación por waid
 # - SLOCK: Lock para acceso thread-safe a SESSION
-# - mode: Estado actual del menú (root/member/admin/admin_pick/etc)
+# - mode: Estado actual del menú (root/member/member_pick/admin/admin_pick/etc)
 # - awaiting: Mecanismo para recolectar datos multi-paso
 #
 # Flujos principales:
@@ -966,7 +970,7 @@ def get_session(waid: str) -> dict:
     
     Estructura de sesión:
     {
-        "mode": "root" | "member" | "admin" | "admin_pick" | "admin_add",
+        "mode": "root" | "member" | "member_pick" | "admin" | "admin_pick" | "admin_add",
         "club": club_id seleccionado (para admins multi-club),
         "awaiting": tipo de dato esperado (nombre/apellidos/waid/palabra/etc),
         "buffer": diccionario temporal para datos multi-paso
@@ -1008,12 +1012,16 @@ def render_root_menu(waid: str) -> str:
     Returns:
         String con opciones numeradas dinámicamente
     """
-    mclub = member_club(waid)
+    mclubs = member_clubs(waid)
     aclubs = admin_clubs(waid)
     opts = []
     idx = 1
-    if mclub:
-        opts.append(f"{idx}) Menú de miembro ({mclub})"); idx += 1
+    if mclubs:
+        if len(mclubs) == 1:
+            opts.append(f"{idx}) Menú de miembro ({mclubs[0]})")
+        else:
+            opts.append(f"{idx}) Menú de miembro (elegir club)")
+        idx += 1
     if aclubs:
         if len(aclubs) == 1:
             opts.append(f"{idx}) Menú de admin ({aclubs[0]})"); idx += 1
@@ -1038,6 +1046,16 @@ def render_member_menu(ctx: Ctx) -> str:
         "2) Estado de la ronda\n"
         "9) Volver"
     )
+
+def render_member_club_picker(mclubs: List[str]) -> str:
+    """
+    Selector de club para miembros que pertenecen a múltiples clubes.
+    """
+    lines = ["Elige club para tu menú de miembro (envía solo el número):"]
+    for i, cid in enumerate(mclubs, 1):
+        lines.append(f"{i}) {cid}")
+    lines.append("9) Volver")
+    return "\n".join(lines)
 
 def render_admin_club_picker(aclubs: List[str]) -> str:
     """
@@ -1192,9 +1210,11 @@ def infer_user_club(waid: str, explicit_cid: Optional[str] = None) -> Optional[s
     """
     if explicit_cid and explicit_cid in _CTX:
         return explicit_cid
-    cid = member_club(waid)
-    if cid:
-        return cid
+    mclubs = member_clubs(waid)
+    if len(mclubs) == 1:
+        return mclubs[0]
+    if len(mclubs) > 1:
+        return None
     candidates = []
     for cid, ctx in _CTX.items():
         st = ctx.state_store.load()
@@ -1267,10 +1287,10 @@ def webhook_post():
 
             # Resolver club por defecto si no hay uno en la sesión
             if not s.get("club"):
-                mc = member_club(waid)
+                mclubs = member_clubs(waid)
                 acls = admin_clubs(waid)
-                if mc:
-                    set_session(waid, club=mc)
+                if len(mclubs) == 1:
+                    set_session(waid, club=mclubs[0])
                 elif len(acls) == 1:
                     set_session(waid, club=acls[0])
 
@@ -1327,12 +1347,16 @@ def webhook_post():
                 # ===== Menú raíz =====
                 if s.get("mode") == "root":
                     idx = 1
-                    mclub = member_club(waid)
+                    mclubs = member_clubs(waid)
                     aclubs = admin_clubs(waid)
-                    if mclub:
+                    if mclubs:
                         if body == str(idx):
-                            set_session(waid, mode="member", club=mclub, awaiting=None)
-                            send_text(waid, render_member_menu(_CTX[mclub])); continue
+                            if len(mclubs) == 1:
+                                cid = mclubs[0]
+                                set_session(waid, mode="member", club=cid, awaiting=None)
+                                send_text(waid, render_member_menu(_CTX[cid])); continue
+                            set_session(waid, mode="member_pick", awaiting="pick_member_club", club=None, buffer=None)
+                            send_text(waid, render_member_club_picker(mclubs)); continue
                         idx += 1
                     if aclubs:
                         if len(aclubs) == 1:
@@ -1346,13 +1370,40 @@ def webhook_post():
                                 send_text(waid, render_admin_club_picker(aclubs)); continue
                             idx += 1
                     if body == str(idx):
-                        # "Mi estado de rol": muestra estado sin cambiar mode
-                        cid = infer_user_club(waid)
+                        mclubs = member_clubs(waid)
+                        # Priorizar el club fijado en sesión si existe
+                        cid = s.get("club") or infer_user_club(waid)
+
                         if cid and cid in _CTX:
                             send_text(waid, who_am_i(_CTX[cid], waid))
+                        elif len(mclubs) > 1:
+                            # Mostrar el estado por cada club al que pertenece
+                            lines = []
+                            for c in mclubs:
+                                lines.append(f"[{c}] {who_am_i(_CTX[c], waid)}")
+                            send_text(waid, "\n".join(lines))
                         else:
                             send_text(waid, "No se pudo determinar tu club. Pide a un admin que te agregue.")
+
+                        send_text(waid, render_root_menu(waid))
+                        continue
+
+                # ===== Picker de club para miembro multi-club =====
+                if s.get("mode") == "member_pick" and awaiting == "pick_member_club":
+                    mclubs = member_clubs(waid)
+                    if not mclubs:
+                        set_session(waid, mode="root", awaiting=None, buffer=None, club=None)
                         send_text(waid, render_root_menu(waid)); continue
+                    if body == "9":
+                        set_session(waid, mode="root", awaiting=None, buffer=None, club=None)
+                        send_text(waid, render_root_menu(waid)); continue
+                    try:
+                        idx = int(body) - 1
+                        cid = mclubs[idx]
+                        set_session(waid, mode="member", club=cid, awaiting=None, buffer=None)
+                        send_text(waid, render_member_menu(_CTX[cid])); continue
+                    except Exception:
+                        send_text(waid, render_member_club_picker(mclubs)); continue
 
                 # ===== Picker de club para admin multi-club =====
                 if s.get("mode") == "admin_pick" and awaiting == "pick_admin_club":
