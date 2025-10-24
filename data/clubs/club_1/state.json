@@ -1,25 +1,23 @@
 {
-  "round": 4,
+  "round": 1,
   "pending": {
     "Toastmasters de la noche": {
-      "candidate": "5219211787763",
-      "declined_by": [
-        "5215634948177"
-      ],
-      "accepted": false
-    },
-    "Evaluador gramatical": {
-      "candidate": "5212293655442",
+      "candidate": "5215634948177",
       "declined_by": [],
       "accepted": false
     },
-    "Evaluador de muletillas": {
+    "Evaluador gramatical": {
       "candidate": "5212721073312",
       "declined_by": [],
       "accepted": false
     },
+    "Evaluador de muletillas": {
+      "candidate": "5212293655442",
+      "declined_by": [],
+      "accepted": false
+    },
     "Evaluador del tiempo": {
-      "candidate": "5219212671618",
+      "candidate": "5219211787763",
       "declined_by": [],
       "accepted": false
     }
@@ -30,16 +28,8 @@
     "5212293655442": [],
     "5212721073312": [],
     "5219211787763": [],
-    "5215634948177": [
-      "Toastmasters de la noche"
-    ]
+    "5215634948177": []
   },
   "last_summary": null,
-  "canceled": false,
-  "session_theme": {
-    "topic": "Prueba",
-    "waid": "5215634948177",
-    "nombre": "Roger",
-    "round": 2
-  }
+  "canceled": false
 }

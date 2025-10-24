@@ -9,7 +9,7 @@
 #   • Miembro: ve su menú de miembro.
 #   • Admin: ve su menú de admin.
 #   • Admin y miembro: menú raíz que separa ambos.
-#   • Invitaciones: siempre ofrece 1 Aceptar / 2 Rechazar / 3 Responder después.
+#   • Invitaciones: siempre ofrece 1 Aceptar / 2 Rechazar.
 #
 # .env mínimo:
 #   GUPSHUP_API_KEY=...
@@ -437,14 +437,7 @@ def start_new_round(ctx: Ctx, by_admin: str) -> str:
 
     for role, info in st["pending"].items():
         cand = info["candidate"]
-        send_text(
-            cand,
-            f"{pretty_name(ctx, cand)}, se te propone el rol {role} para la reunión #{st['round']}.\n"
-            "Elige una opción y envía solo el número:\n"
-            "1) ✅ Aceptar\n"
-            "2) ❌ Rechazar\n"
-            "3) ⏳ Responder después"
-        )
+        begin_invite_flow(ctx, cand, role, st["round"])
 
     assigned_roles = set(st["pending"].keys())
     not_assigned = [r.name for r in ctx.club.roles if r.name not in assigned_roles]
@@ -499,14 +492,7 @@ def handle_reject(ctx: Ctx, waid: str) -> str:
             if cand:
                 info["candidate"] = cand
                 ctx.state_store.save(st)
-                send_text(
-                    cand,
-                    f"Se te propone el rol {role} en la reunión #{st['round']}.\n"
-                    "Elige una opción y envía solo el número:\n"
-                    "1) ✅ Aceptar\n"
-                    "2) ❌ Rechazar\n"
-                    "3) ⏳ Responder después"
-                )
+                begin_invite_flow(ctx, cand, role, st["round"])
                 return f"↪️ Rechazado por {pretty_name(ctx, waid)}. Nuevo candidato: {pretty_name(ctx, cand)}."
             else:
                 del st["pending"][role]
@@ -556,8 +542,7 @@ def who_am_i(ctx: Ctx, waid: str) -> str:
                 f"Tienes una invitación pendiente: {role} en la ronda #{st['round']} ({ctx.club_id}).\n"
                 "Elige una opción y envía solo el número:\n"
                 "1) ✅ Aceptar\n"
-                "2) ❌ Rechazar\n"
-                "3) ⏳ Responder después"
+                "2) ❌ Rechazar"
             )
     for role, acc in st["accepted"].items():
         if acc["waid"] == waid:
@@ -717,15 +702,26 @@ def render_admin_menu(ctx: Ctx) -> str:
         "9) 🔙 Volver"
     )
 
-def send_invite_menu(ctx: Ctx, waid: str, role: str, round_no: int) -> None:
-    send_text(
-        waid,
-        f"🔔 Invitación pendiente: {role} en la reunión #{round_no} ({ctx.club_id}).\n"
+def invite_text(ctx: Ctx, role: str, round_no: int) -> str:
+    return (
+        f"🔔 Invitación: {role} en la reunión #{round_no} ({ctx.club_id}).\n"
         "Elige una opción y envía solo el número:\n"
         "1) ✅ Aceptar\n"
-        "2) ❌ Rechazar\n"
-        "3) ⏳ Responder después"
+        "2) ❌ Rechazar"
     )
+
+
+def begin_invite_flow(ctx: Ctx, waid: str, role: str, round_no: int) -> None:
+    set_session(
+        waid,
+        awaiting="invite_decision",
+        buffer={"role": role, "waid": waid, "club": ctx.club_id, "round": round_no},
+    )
+    send_text(waid, invite_text(ctx, role, round_no))
+
+
+def send_invite_menu(ctx: Ctx, waid: str, role: str, round_no: int) -> None:
+    begin_invite_flow(ctx, waid, role, round_no)
 
 # ======================================================================================
 # 6) Flask app (endpoints y webhook)
@@ -833,51 +829,58 @@ def webhook_post():
             current_cid = s.get("club") or infer_user_club(waid, extract_trailing_club_id(body_raw))
             if current_cid and current_cid in _CTX:
                 ctx = _CTX[current_cid]
-                role_pending = has_pending_invite(ctx, waid)
             else:
                 ctx = None
-                role_pending = None
-
-            # PRIORIDAD 1: Invitación pendiente 1/2/3
-            if is_number and role_pending and body in ("1", "2", "3"):
-                if body == "1":
-                    if role_pending == "Evaluador gramatical":
-                        accept_msg = handle_accept(ctx, waid)
-                        send_text(waid, accept_msg)
-                        st_now = ctx.state_store.load()
-                        set_session(
-                            waid,
-                            awaiting="word_step1_palabra",
-                            buffer={"role": role_pending, "waid": waid, "club": ctx.club_id, "round": st_now["round"]},
-                        )
-                        send_text(waid, "📖 Envía la palabra del día:")
-                    elif role_pending == "Toastmasters de la noche":
-                        accept_msg = handle_accept(ctx, waid)
-                        send_text(waid, accept_msg)
-                        st_now = ctx.state_store.load()
-                        set_session(
-                            waid,
-                            awaiting="theme_step1_topic",
-                            buffer={"role": role_pending, "waid": waid, "club": ctx.club_id, "round": st_now["round"]},
-                        )
-                        send_text(waid, "📝 Envía la temática de la sesión:")
-                    else:
-                        send_text(waid, handle_accept(ctx, waid))
-                        set_session(waid, mode="root", awaiting=None, buffer=None)
-                        send_text(waid, render_root_menu(waid))
-                elif body == "2":
-                    send_text(waid, handle_reject(ctx, waid))
-                    set_session(waid, mode="root", awaiting=None, buffer=None)
-                    send_text(waid, render_root_menu(waid))
-                else:
-                    st = ctx.state_store.load()
-                    send_text(waid, f"⏳ Queda pendiente tu respuesta para {role_pending} en la ronda #{st['round']} ({ctx.club_id}).")
-                    set_session(waid, mode="root", awaiting=None, buffer=None)
-                    send_text(waid, render_root_menu(waid))
-                continue
 
             # PRIORIDAD 2: Flujos awaiting (SIEMPRE antes de menús)
             awaiting = s.get("awaiting")
+
+            # --- Flujo de invitación a rol (solo 1/2). Cualquier otra cosa re-muestra el prompt.
+            if awaiting == "invite_decision":
+                if body == "1":
+                    buffer = s.get("buffer", {})
+                    club_ctx = _CTX[buffer["club"]]
+                    role_name = buffer["role"]
+                    accept_msg = handle_accept(club_ctx, waid)
+                    send_text(waid, accept_msg)
+
+                    # Subflujos posteriores según rol (mantén exactamente los mismos emojis/estilo)
+                    role_norm = role_name.lower()
+                    st_now = club_ctx.state_store.load()
+                    if "evaluador gramatical" in role_norm:
+                        set_session(
+                            waid,
+                            awaiting="word_step1_palabra",
+                            buffer={"role": role_name, "waid": waid, "club": club_ctx.club_id, "round": st_now["round"]},
+                        )
+                        send_text(waid, "📖 Envía la palabra del día:")
+                    elif "toastmaster" in role_norm or "toastmasters de la noche" in role_norm:
+                        set_session(
+                            waid,
+                            awaiting="theme_step1_topic",
+                            buffer={"role": role_name, "waid": waid, "club": club_ctx.club_id, "round": st_now["round"]},
+                        )
+                        send_text(waid, "📝 Envía la temática de la sesión:")
+                    else:
+                        set_session(waid, awaiting=None, buffer=None, mode="root")
+                        send_text(waid, render_root_menu(waid))
+                    return jsonify({"status": "ok"})
+
+                elif body == "2":
+                    buffer = s.get("buffer", {})
+                    club_ctx = _CTX[buffer["club"]]
+                    reject_msg = handle_reject(club_ctx, waid)
+                    send_text(waid, reject_msg)
+                    set_session(waid, awaiting=None, buffer=None, mode="root")
+                    send_text(waid, render_root_menu(waid))
+                    return jsonify({"status": "ok"})
+
+                else:
+                    buffer = s.get("buffer", {})
+                    club_ctx = _CTX[buffer["club"]]
+                    send_text(waid, "❗Opción inválida. Responde 1 (Aceptar) o 2 (Rechazar).")
+                    send_text(waid, invite_text(club_ctx, buffer["role"], buffer["round"]))
+                    return jsonify({"status": "ok"})
 
             # Agregar miembro
             if awaiting == "admin_add_member" and s.get("mode") == "admin" and ctx:
