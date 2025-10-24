@@ -41,6 +41,7 @@ from requests.exceptions import RequestException
 
 # Modelo POO existente
 from models import Club, Member, Role
+from session_store import load_session, save_session
 
 # ======================================================================================
 # 1) Configuración y logging
@@ -627,18 +628,36 @@ def reset_all(ctx: Ctx, by_admin: str) -> str:
 SESSION: Dict[str, dict] = {}
 SLOCK = Lock()
 
+
+def _default_session() -> dict:
+    return {"mode": "root", "club": None, "awaiting": None, "buffer": None}
+
+
 def get_session(waid: str) -> dict:
     with SLOCK:
         s = SESSION.get(waid)
-        if not s:
-            s = {"mode": "root", "club": None, "awaiting": None, "buffer": None}
-            SESSION[waid] = s
-        return s
+        if s:
+            return s
+        loaded = load_session(waid)
+        if loaded:
+            SESSION[waid] = loaded
+            return loaded
+        fresh = _default_session()
+        SESSION[waid] = fresh
+        save_session(waid, fresh)
+        return fresh
+
 
 def set_session(waid: str, **kwargs) -> None:
     with SLOCK:
-        s = SESSION.setdefault(waid, {"mode": "root", "club": None, "awaiting": None, "buffer": None})
+        s = SESSION.get(waid)
+        if not s:
+            s = load_session(waid)
+            if not s:
+                s = _default_session()
+            SESSION[waid] = s
         s.update(kwargs)
+        save_session(waid, s)
 
 def render_root_menu(waid: str) -> str:
     mclubs = member_clubs(waid)
